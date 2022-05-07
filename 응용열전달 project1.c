@@ -1,1 +1,1346 @@
-#include <stdio.h>#include <stdlib.h>#include<string.h>#define _USE_MATH_DEFINES	// pi°ª »ç¿ë. º¯¼ö ÀÌ¸§ M_PI#include <math.h>#include <errno.h>#include <direct.h>//¿£Å»ÇÇ³ª cp °ª kj¿¡¼­ j ´ÜÀ§·Î ´Ù Ä¡È¯ÇÒ °Í.#define GRID 100 //	ÂÉ°³³õÀº PartitionÀ» ±âÁØÀ¸·Î ¿Âµµ Å×ÀÌºíÀ» GRID ¼ö¸¸Å­ ´õ ÂÉ°³¼­ Å×ÀÌºí·Î ±âÀÔ.//GRID °ªÀÌ 100º¸´Ù ÀÛÀº ¹üÀ§¿¡¼­ Hot_in_temp°ú Cold_out_temp°¡ °ãÃÄ¼­ ¿¡·¯¸¦ ÀÏÀ¸Å³ °¡´É¼ºÀÌ ÀÖ´Ù.//CSV ÆÄÀÏ·Î ÀúÀåÇÒ ¶§ geometricÀÌ³ª ±×³É thermal conditionµéÀº ÀÏ´Ü txtÆÄÀÏ·Î ´Ù ¿Å°Ü³õÀ» °Í.//´ëºÎºĞ µ¥ÀÌÅÍµéÀ» double·Î Ã³¸®ÇÒ °Í//<Database>	//<Struction>typedef struct _tempdata{ // ProData	double temperature;	double conductivity;	double viscosity;	double density;	double Cp;	double enthalpy;}ProData;	//Property_Datatypedef struct _hotside{ // Tube	//¿Âµµ °ü·Ã ÇÁ·ÎÆÛÆ¼	double in_temp;	double out_temp;	double avg_temp;	int index;	// ¿Âµµ Å×ÀÌºí¿¡ ´ëÇÑ ÁÖ¼Ò°ª.	double in_enthalpy;	double out_enthalpy;// ¿£Å»ÇÇ¸¸ ÀÎ ¾Æ¿ôÀ» ±¸ºĞÇÏ°í ³ª¸ÓÁö´Â ´Ù Æò±Õ ¿Âµµ ±â¹İÀ¸·Î °è»ê.	double conductivity;	double viscosity;	double density;	double Cp;	//±× ¿Ü ÇÁ·ÎÆÛÆ¼	double Pr;	double e_ratio;	double p_ratio;	double angle_ratio;	double velocity;	double Re;	double Nu;	double hi;	double fi;	double DP;}Tube;typedef struct _coldside{ //Annular	//¿Âµµ °ü·Ã ÇÁ·ÎÆÛÆ¼	double in_temp;	double out_temp;	double avg_temp;	int index;	// ¿Âµµ Å×ÀÌºí¿¡ ´ëÇÑ ÁÖ¼Ò°ª.	double in_enthalpy;	double out_enthalpy;// ¿£Å»ÇÇ¸¸ ÀÎ ¾Æ¿ôÀ» ±¸ºĞÇÏ°í ³ª¸ÓÁö´Â ´Ù Æò±Õ ¿Âµµ ±â¹İÀ¸·Î °è»ê.	double conductivity;	double viscosity;	double density;	double Cp;	//±× ¿Ü ÇÁ·ÎÆÛÆ¼	double Pr;	double e_ratio;	double p_ratio;	double angle_ratio;	double r_ratio;	double Dhyd;	double Aeff;	double velocity;	double Re;	double Nu;	double ho;	double ef;	double fo;	double DP;}Annular;typedef struct _common{ //common	double HX;	double length;	double height;	double volume;	double DTln;	//LMTD	double UA;	double Ui;	double Ai;	double Uo;	double Ao;	double Cucond;}Common;	//<\Struction>	//<Parameters>double T_cond[10] = { 0.5475, 0.00205, -5.55E-06, 4.55E-08, -5.90E-09, 1.56E-10, -2.26E-12, 2.00E-14, -1.00E-16, 2.18E-19 }; // 1stdouble Viscosity[10] = { 0.00179, -6.23E-05, 1.70E-06, -3.96E-08, 7.63E-10, -1.14E-11, 1.22E-13, -8.75E-16, 3.69E-18, -6.91E-21 }; // 2nddouble Density[10] = { 999.8292, 0.10526, -0.01371, 3.46E-04, -8.30E-06, 1.28E-07, -1.12E-09, 4.44E-12, 1.17E-15, -4.43E-17 }; // 3rddouble Cp[10] = { 4.22837, -0.0083, 6.28E-04, -2.61E-05, 6.74E-07, -1.15E-08, 1.33E-10, -9.98E-13, 4.35E-15, -8.35E-18 }; // 4thdouble Enthalpy[10] = { 0.06374, 4.22664, -0.00381, 1.75E-04, -4.63E-06, 7.13E-08, -6.16E-10, 2.49E-12, -3.65E-16, -2.04E-17 }; // 5thProData copper[7];	// ¿Âµµ-¿­Àü´Ş°è¼ö¸¸ Ç¥±â. ³ª¸ÓÁö ÀÎ½ºÅÏ½ºµéÀº °ÇµéÁö ¸» °Í.	//<\parameters>	//<Geometric conditions>//¾ê³×µé °ªµµ µû·Î ÀúÀåÇÏ´Â Å×ÀÌºíÀ» ¸¸µé¾î¼­ ÀúÀåÇØ¼­ ºÒ·¯¿À´Â ¹æ½Äµµ »ı°¢ÇØº¸ÀÚ.double Dbi;	//gdouble Deo;	//gdouble tw = 5.0E-04;  //constant int Ns;	//gdouble Pitch;	//gdouble Dcan = 0.2;	// constantdouble R = 0.6;	//constantdouble FB;double Dvi;double Dvo;double Doi;double angle;double e;double mh = 2;double mc = 1.5;	//<\Geometric conditions>	//<Thermal conditions>double Hot_in_temp;double Hot_out_temp;double Cold_in_temp;double Cold_out_temp;int partition;	// n, ¸î ¹øÀ» ³ª´­ °ÍÀÎ°¡??double DTh;	// ÆÄÆ¼¼Ç ³ª´« °¹¼ö¿¡ µû¶ó Æ©ºêÀÇ ¿Âµµ ÀÏÁ¤ÇÑ °£°İÀ» ´ãÀº °ª//double Hot_avg_temp = 57.5;//double Cold_avg_temp;	//<\Thermal conditions>	//<Parametric Analysis Conditions>double min_factor, max_factor, unit = 0.01;int min_Ns, max_Ns;double Dbi_ini, Deo_ini, Doi_ini, Pitch_ini;	// ÃßÈÄ¿¡ À§ º¯¼öµéÀº º¯°æµÉ °ªµéÀÌ¶ó ÃÊ±â°ªµéÀ» ´ã¾ÆÁÖ´Â º¯¼öµé.int Ns_ini; int size; // parametric analysis¸¦ À§ÇÑ Å©±â ÀúÀå°ª.	//<\Parametric Analysis Conditions>//<\Database>///////////////////////////////////////////////////////////////////////////////////////<Functions>	//<Calculator/ShowData/FPrintf Functions>void write_given_geodata(int option);	//ÁÖ¾îÁö´Â °ªµéÀ» ¹Ş¾Æ¼­ Àü¿ªº¯¼ö¿¡ ÀúÀå½ÃÅ²´Ù. ÇØ´ç °ªµéÀº Geometric °ªµé, termperature °ªµé. µû·Î Ã¼Å©ÇÏ´Â °÷ÀÌ ÇÊ¿äÇÏ´Ù.void Print_given_geodata(void); // Çü»ó µ¥ÀÌÅÍ È®ÀÎ¿ë Ãâ·Âvoid write_given_tempdata(int option);void Print_given_tempdata(void);void write_given_parametric_factor(int option); 	// Parametric Analysis¿¡ ¾²ÀÏ º¯¼ö ´ëÀÔÇÏ´Â ÇÔ¼ö.void Print_given_parametric_factor(int size);void Initialize_Geoconditions(void);	// Parametric Analysis¿¡ ¾²ÀÏ GeoconditionsÀ» ÃÊ±âÈ­.void create_property_csv(ProData* prodata, int add); // ¾Æ·¡ ÇÁ·ÎÆÛÆ¼ °è»ê±â¸¦ ÅëÇØ ±¸Á¶Ã¼ ¹è¿­¿¡ ÀúÀå°ú µ¿½Ã¿¡, ÇÁ·ÎÆÛÆ¼ csvÆÄÀÏÀ» ÀÛ¼ºÇÑ´Ù. void property_calculator(ProData* prodata, int add, double temp, double gap);	// ¿Âµµ¿¡ µû¸¥ ÇÁ·ÎÆÛÆ¼ °ªµéÀ» °è»êÇÑ´Ù.void Calculate_HX_partly(ProData* prodata, Tube* ptube, Annular* pannular, Common* pcommon); //¡Ú¡Ú¡ÚÀÌ¹ø °è»ê±âÀÇ ÃÑ ÁıÇÕÃ¼¡Ú¡Ú¡Úvoid create_counterflow_csv(char* filename, Tube* ptube, Annular* pannular, Common* pcommon);	// CSV ÆÄÀÏ·Î Ãâ·Â	//<\Calculator/ShowData/FPrintf Functions>	//<Simple calculated data : common>void calculate_FB(void);	// Àü¿ªº¯¼ö´Â µû·Î ÀÔ·Â°ªÀ¸·Î ¾²Áö ¾Ê¾Æµµ µÈ´Ù.void calculate_Dvi(void);void calculate_Dvo(void);void calculate_Doi(void);void calcuate_angle(void);void calculate_e(void);void calculate_DTh(void);void initialize_copper(void);void calculate_Coldtemps(ProData* prodata, Tube* ptube, Annular* pannular, int index);	//<\Simple calculated data : common>	//<Simple calculated data : tube>	¹İÈ¯°ª ÀüºÎ´Ù double·Îdouble cal_tube_Pr(double Cp, double viscosity, double conductivity);	//  ¸ğµÎ º¯¼ö ÇÊ¿ä.double cal_tube_e_ratio(void); // only Àü¿ªº¯¼ödouble cal_tube_p_ratio(void);// only Àü¿ªº¯¼ödouble cal_tube_angle_ratio(void);// only Àü¿ªº¯¼ödouble cal_tube_velocity(double density);double cal_tube_Re(double velocity, double density, double viscosity);double cal_tube_Nu(double Re, double e_ratio, double p_ratio, double angle_ratio, double Pr);double cal_tube_fi(double Re, double e_ratio, double p_ratio, double angle_ratio);double cal_tube_hi(double Nu, double conductivity);	//¡Ú°¡Àå ¸¶Áö¸·¿¡ ±¸ÇÒ °Í.double cal_tube_DP(double fi, double length, double density, double velocity);	//¡Ú°¡Àå ¸¶Áö¸·¿¡ ±¸ÇÒ °Í.	//<\Simple calculated data : tube>	//<Simple calculated data : annular>double cal_annular_Pr(double Cp, double viscosity, double conductivity);double cal_annular_e_ratio(void); // only Àü¿ªº¯¼ödouble cal_annular_p_ratio(void); // only Àü¿ªº¯¼ödouble cal_annular_angle_ratio(void); // only Àü¿ªº¯¼ödouble cal_annular_r_ratio(void); // only Àü¿ªº¯¼ödouble cal_annular_Dhyd(void); // only Àü¿ªº¯¼ödouble cal_annular_Aeff(void); // only Àü¿ªº¯¼ödouble cal_annular_velocity(double density, double Aeff);double cal_annular_Re(double velocity, double density, double Dhyd, double viscosity);double cal_annular_ef(double Re, double e_ratio, double p_ratio, double angle_ratio, double r_ratio);double cal_annular_fo(double Re, double r_ratio, double ef);double cal_annular_Nu(double fo, double Re, double Pr, double e_ratio, double p_ratio, double r_ratio);double cal_annular_ho(double Nu, double conductivity, double Dhyd);double cal_annular_DP(double fo, double length, double Dhyd, double density, double velocity);	//<\Simple calculated data : annular>	//<Simple calculated data : objects>double cal_common_DTln(double hot_in, double hot_out, double cold_in, double cold_out);double cal_common_Cucond(double hot_avg, double cold_avg); // µÎ ¿ÂµµÀÇ Æò±Õ ¿Âµµ¿¡¼­ conductivity¸¦ ±¸ÇÑ´Ù. Å« ÀÇ¹Ì ¾øÀ½.double cal_common_UA(double DTln, double HX);double cal_common_length(double hi, double ho, double Cucond, double UA);double cal_common_height(double length);double cal_common_volume(double height);double cal_common_Ai(double length);double cal_common_Ui(double UA, double Ai);double cal_common_Ao(double length);double cal_common_Uo(double UA, double Ao);	//<\Simple calculated data : objects>	//<Evaluate Sum of Avg Values>void SumNAvg_Common(Common* pcommon);void SumNAvg_Tube(Tube* ptube, Common* pcommon);void SumNAvg_Annular(Annular* pannular, Common* pcommon);	//<\Evaluate Sum of Avg Values>//<\Functions>///////////////////////////////////////////////////////////////////////////////////////##################################################int main(void) {	int loop;	char input;	char filename[20] = "initial.csv";	//Æú´õ »ı¼º ¹× ÀÛ¾÷ µğ·ºÅä¸® ¼³Á¤	char strFolderPath[100] = {"C:\\Temp\\HX_counterflow"};	int nResult = mkdir(strFolderPath);		if( nResult == 0 ) {		printf("Æú´õ »ı¼º ¼º°ø. Æú´õ ÀúÀåµÈ µğ·ºÅä¸®: %s\n", strFolderPath);	}	else if(nResult == -1) {		perror("Æú´õ »ı¼º ½ÇÆĞ - Æú´õ°¡ ÀÌ¹Ì ÀÖ°Å³ª ºÎÁ¤È®ÇÔ");		printf("Error massager : %d\n", errno);	}		nResult = chdir(strFolderPath);	if(nResult == 0) {		printf("ÀÌµ¿ ¼º°ø. ÇöÀç ÀÛ¾÷ µğ·ºÅä¸® : %s\n", strFolderPath);	}	else if(nResult == -1) {		perror("ÀÌµ¿ ½ÇÆĞ. ÇöÀç ½ÇÇà ÁßÀÎ exe¿Í °°Àº µğ·ºÅä¸®¿¡ ÆÄÀÏÀÌ ÀúÀåÀÌ µË´Ï´Ù.");		printf("Error massager : %d\n", errno);	}		//....Æú´õ »ı¼º ¹× ÀÛ¾÷ µğ·ºÅä¸® ¼³Á¤		printf("======================================\n");	printf("======Counter Flow HX Calculator======\n");	printf("Process : Geometric boundary condition...\n");	initialize_copper();	for(loop = 0;loop<4;loop++){ //optionÀÌ 0~3		write_given_geodata(loop);	}	while(1) {		calculate_FB();	// Àü¿ªº¯¼ö´Â µû·Î ÀÔ·Â°ªÀ¸·Î ¾²Áö ¾Ê¾Æµµ µÈ´Ù.		calculate_Dvi();		calculate_Dvo();		calculate_Doi();		calcuate_angle();		calculate_e();				Print_given_geodata();		printf("Dbi<Deo<Doi ÀÌ°í Ns°¡ Á¤¼öÀÎÁö µîµî ¹İµå½Ã È®ÀÎÀ» ÇØÁÖ½Ã±â ¹Ù¶ø´Ï´Ù.\n");		printf("Dbi ¼öÁ¤ÇÏ·Á¸é 0, Deo´Â 1, Ns´Â 2, Pitch´Â 3À» ÀÔ·ÂÇÏ¼¼¿ä.\n");		printf("±×³É ³Ñ¾î°¡·Á¸é 0~3À» Á¦¿ÜÇÑ ¾Æ¹« °ªÀ» ÀÔ·ÂÇÏ¼¼¿ä.\n");		getchar();		scanf("%c", &input);		if('0' <= input && input <= '3'){			loop = atoi(&input);	//¾û¼ºÇÑ ºÎºĞ			write_given_geodata(loop);		}		else			break;	}	printf("Process Complete: Geometric boundary condition!\n\n");		printf("Process : Thermal boundary condition...\n");	for(loop=0;loop<4;loop++) { // optionÀÌ 0~3		write_given_tempdata(loop);	} 		while(1) {		calculate_DTh();		Print_given_tempdata();		printf("¿Ã¹Ù¸£°Ô ÀÔ·ÂÇß´ÂÁö È®ÀÎÀ» ÇØÁÖ½Ã±â ¹Ù¶ø´Ï´Ù.\n");		printf("H_i_TÀ» ¼öÁ¤ÇÏ·Á¸é 0, H_o_T´Â 1, C_i_T´Â 2, ±¸°£°¹¼ö´Â 3À» ÀÔ·ÂÇÏ¼¼¿ä\n");		printf("±×³É ³Ñ¾î°¡½Ã·Á¸é 0~3À» Á¦¿ÜÇÑ ¾Æ¹« °ªÀ» ÀÔ·ÂÇÏ¼¼¿ä.\n");		getchar();		scanf("%c", &input);		if('0' <= input && input <= '3'){			loop = atoi(&input);			write_given_tempdata(loop);		}		else			break;	}	printf("Process Complete : Thermal boundary condition!\n\n");		printf("Process : Creating Data Table...\n");		int add = 0; // Table ÀÛ¼ºÀ» À§ÇØ Ãß°¡ ÀÎµ¦½º ¾ç °è»ê.	double gap = DTh/GRID; 	//(Hot_in_temp-Hot_out_temp)/(GRID*partition);	// table ÂÉ°³´Â ¿Âµµ ´ÜÀ§. ¾ê´Â ÃÊ±â¿¡ ¼³Á¤ ÇÔ¼ö·Î ¿Å±âÀÚ.	double temp = Hot_out_temp;	while(temp > Cold_in_temp) {		temp -= gap;		add++;	}		ProData prodata_table[GRID*partition+add+1];	// partition ³ª´« ¸¸Å­ hot avg °ªÀ» Á¤È®ÇÏ°Ô ÇÏ±â À§ÇØ ¹İÀ¸·Î ÂÉ°µ´Ù.	Tube tube_table[partition+1];	Annular annular_table[partition+1];	Common common_table[partition+1];		printf("Process Complete: Creating Data Table!\n\n");		printf("Process : Property of Water with Temperature\n");	property_calculator(prodata_table, add, temp, gap);	create_property_csv(prodata_table, add);	printf("Process Complete : Property of Water with Temperature!\n\n");		printf("======================================\n");	printf("Main Process Calculating...\n");	Calculate_HX_partly(prodata_table, tube_table, annular_table, common_table);	SumNAvg_Common(common_table);	SumNAvg_Tube(tube_table, common_table);	SumNAvg_Annular(annular_table, common_table);	create_counterflow_csv(filename, tube_table, annular_table, common_table);	printf("\nMain Process Finish!!\n");	printf("======================================\n\n");	printf("\n");			printf("======================================\n");	printf("Process : Parametric Analysis\n");	for(loop = 0; loop< 4; loop++) {		write_given_parametric_factor(loop);	}	while(1) {		size= (max_factor-min_factor)*100+1;		Print_given_parametric_factor(size);		printf("min_factor, max_factor´Â ¹İµå½Ã ¼Ò¼ö µÑÂ° ÀÚ¸®±îÁö¸¸ Çã¿ëµË´Ï´Ù. ±× ¾Æ·¡ ÀÚ¸´¼öºÎÅÍ´Â ¿À·ù°¡ ¹ß»ıÇÕ´Ï´Ù.\n");		printf("min_factor¸¦ ¼öÁ¤ÇÏ·Á¸é 0, max_factor´Â 1, min_Ns´Â 2, max_Ns´Â 3À» ÀÔ·ÂÇÏ¼¼¿ä.\n");		printf("±×³É ³Ñ¾î°¡½Ã·Á¸é 0~3À» Á¦¿ÜÇÑ ¾Æ¹« °ªÀÌ³ª ÀÔ·ÂÇÏ¼¼¿ä.\n");		getchar();		scanf("%c", &input);		if('0' <= input &&input <= '3') {			loop = atoi(&input);			write_given_parametric_factor(loop);		}		else			break;	}	// °úÁ¤À» °è¼Ó ¹İº¹ÇÏ±â À§ÇØ¼­´Â ÃÊ±â°ªµéÀ» ÀúÀåÇØ³õ¾Æ¾ß ÇÑ´Ù. 	Dbi_ini = Dbi;	Deo_ini = Deo;	Doi_ini = Doi;	Pitch_ini = Pitch;	Ns_ini = Ns;	//ÀÌ ÀÌÈÄ¿¡ Dbi Deo Doi Ns PitchÀÇ factor Á¶Á¤ÇÏ´Â °úÁ¤À» ¸¸µé¾î À§ °úÁ¤À» ´Ù½Ã ¹İº¹ÇÏ°Ô ¸¸µé¾î¾ß ÇÑ´Ù.	// ÀúÀåÇÒ µ¥ÀÌÅÍµé È£Ãâ	Tube Tube_Modified_Dbi[size+1];	Tube Tube_Modified_Deo[size+1];	Tube Tube_Modified_Doi[size+1];	Tube Tube_Modified_Pitch[size+1];	Tube Tube_Modified_Ns[max_Ns-min_Ns+1];		Annular Annular_Modified_Dbi[size+1];	Annular Annular_Modified_Deo[size+1];	Annular Annular_Modified_Doi[size+1];	Annular Annular_Modified_Pitch[size+1];	Annular Annular_Modified_Ns[max_Ns-min_Ns+1];			Common Common_Modified_Dbi[size+1];	Common Common_Modified_Deo[size+1];	Common Common_Modified_Doi[size+1];	Common Common_Modified_Pitch[size+1];	Common Common_Modified_Ns[max_Ns-min_Ns+1];		char filename1[20] = "Modify_Dbi.csv";	for(loop = 0;loop<size+1;loop++) {	// Dbi		// ¸Å¹ø geometric condition °»½Å		Dbi = (min_factor+0.01*loop)*Dbi_ini;		calculate_FB();		calculate_Dvi();		calculate_Dvo();		calculate_Doi();		calcuate_angle();		calculate_e();				if(Dbi +2*tw< Deo) {	//ÀÌ Á¶°ÇÀÌ ÃæÁ·µÇÁö ¾ÊÀ¸¸é ÇØ´ç µ¥ÀÌÅÍ´Â ¸ğµÎ 0À¸·Î Ã³¸®µÈ´Ù.			Calculate_HX_partly(prodata_table, tube_table, annular_table, common_table);			SumNAvg_Common(common_table);			SumNAvg_Tube(tube_table, common_table);			SumNAvg_Annular(annular_table, common_table);						Tube_Modified_Dbi[loop] = tube_table[partition];			Annular_Modified_Dbi[loop] = annular_table[partition];			Common_Modified_Dbi[loop] = common_table[partition];		}	}	Initialize_Geoconditions();	//filename ¶§¹®¿¡ ¹®¼­ ÀÛ¼ºÇÒ ÇÔ¼ö¸¦ È£ÃâÇØ¾ßÇÔ.	create_counterflow_csv(filename1, Tube_Modified_Dbi, Annular_Modified_Dbi, Common_Modified_Dbi);		char filename2[20] = "Modify_Deo.csv";	for(loop = 0;loop<size+1;loop++) { // Deo		Deo= (min_factor+0.01*loop)*Deo_ini;		calculate_FB();		calculate_Dvi();		calculate_Dvo();		//calculate_Doi(); ÀÏ´Ü ¼³Á¤À» ²¨³õÀÚ.		calcuate_angle();		calculate_e();				if(Dbi+2*tw < Deo && Deo <= Doi) {			Calculate_HX_partly(prodata_table, tube_table, annular_table, common_table);			SumNAvg_Common(common_table);			SumNAvg_Tube(tube_table, common_table);			SumNAvg_Annular(annular_table, common_table);						Tube_Modified_Deo[loop] = tube_table[partition];			Annular_Modified_Deo[loop] = annular_table[partition];			Common_Modified_Deo[loop] = common_table[partition];		}	}	Initialize_Geoconditions();		//filename ¶§¹®¿¡ ¹®¼­ ÀÛ¼ºÇÒ ÇÔ¼ö¸¦ È£ÃâÇØ¾ßÇÔ.	create_counterflow_csv(filename2, Tube_Modified_Deo, Annular_Modified_Deo, Common_Modified_Deo);		char filename3[20] = "Modify_Doi.csv";	for(loop = 0;loop<size+1;loop++) {	//Doi		Doi = (min_factor+0.01*loop)*Doi_ini;		calculate_FB();		calculate_Dvi();		calculate_Dvo();		calcuate_angle();		calculate_e();				if(Deo <= Doi) {			Calculate_HX_partly(prodata_table, tube_table, annular_table, common_table);			SumNAvg_Common(common_table);			SumNAvg_Tube(tube_table, common_table);			SumNAvg_Annular(annular_table, common_table);						Tube_Modified_Doi[loop] = tube_table[partition];			Annular_Modified_Doi[loop] = annular_table[partition];			Common_Modified_Doi[loop] = common_table[partition];		}	}	Initialize_Geoconditions();	//filename ¶§¹®¿¡ ¹®¼­ ÀÛ¼ºÇÒ ÇÔ¼ö¸¦ È£ÃâÇØ¾ßÇÔ.	create_counterflow_csv(filename3, Tube_Modified_Doi, Annular_Modified_Doi, Common_Modified_Doi);		char filename4[20] = "Modify_Pitch.csv";	for(loop = 0;loop<size+1;loop++) { // Pitch		Pitch = (min_factor+0.01*loop)*Pitch_ini;		calculate_FB();		calculate_Dvi();		calculate_Dvo();		calculate_Doi();		calcuate_angle();		calculate_e();				Calculate_HX_partly(prodata_table, tube_table, annular_table, common_table);		SumNAvg_Common(common_table);		SumNAvg_Tube(tube_table, common_table);		SumNAvg_Annular(annular_table, common_table);				Tube_Modified_Pitch[loop] = tube_table[partition];		Annular_Modified_Pitch[loop] = annular_table[partition];		Common_Modified_Pitch[loop] = common_table[partition];	}	Initialize_Geoconditions();	//filename ¶§¹®¿¡ ¹®¼­ ÀÛ¼ºÇÒ ÇÔ¼ö¸¦ È£ÃâÇØ¾ßÇÔ.	create_counterflow_csv(filename4, Tube_Modified_Pitch, Annular_Modified_Pitch, Common_Modified_Pitch);		char filename5[20] = "Modify_Ns.csv";	for(loop = min_Ns; loop < max_Ns+1;loop++) { // Ns		Ns = loop;				calculate_FB();		calculate_Dvi();		calculate_Dvo();		calculate_Doi();		calcuate_angle();		calculate_e();		/*printf("\n Áß°£ Á¡°Ë\n");		printf("Ns : %dÀÏ ¶§,", Ns);		Print_given_geodata();		system("pause");*/				Calculate_HX_partly(prodata_table, tube_table, annular_table, common_table);		SumNAvg_Common(common_table);		SumNAvg_Tube(tube_table, common_table);		SumNAvg_Annular(annular_table, common_table);				Tube_Modified_Ns[loop-1] = tube_table[partition];		Annular_Modified_Ns[loop-1] = annular_table[partition];		Common_Modified_Ns[loop-1] = common_table[partition];	}	Initialize_Geoconditions();	//±×·³ ÀÌ ÆÄÀÏ¿¡´Â ÃÖ¼ÒÇÑ FilenameÀ» »ı¼ºÇÏ´Â º¯¼ö°¡ ÇÊ¿äÇÏ´Ù.	create_counterflow_csv(filename5, Tube_Modified_Ns, Annular_Modified_Ns, Common_Modified_Ns);	printf("\nProcess Complete: Parametric Analysis\n");	printf("À¯ÀÇ»çÇ×\n");	printf("QNANE°ªÀÌ ¶ß¸é DTlnÀ» ±¸ÇÒ ¶§, log(0)ÀÌ µÇÁö ¾Ê¾Ò´ÂÁö È®ÀÎÇØÁÖ¼¼¿ä.\n");	printf("Modified_...csv ÆÄÀÏµéÀº 0¸¸ ÀÔ·ÂµÇ¾îÀÖ´Â ÁÙÀÌ ÀÖ½À´Ï´Ù. ±× ÁÙÀº geometric condition°ú Ãæµ¹ÇÏ¿© °è»êÀ» ÇÏÁö ¾ÊÀº ¿µ¿ªÀÔ´Ï´Ù.\n");	system("pause");	return 0;}//########################################################/////////////////////////////////////////////////////////////////////////////////////////////////<Function contents> 	//<Thermal and Geometric given data>void write_given_geodata(int option) {	int i = option;	switch(i) {		case 0:		while(1) {			printf("Dbi °ªÀ» ÀÔ·ÂÇØÁÖ½Ê½Ã¿À[m]. (ex. 15 mm => 1.5E-02) : ");			scanf("%lf", &Dbi);			if(Dbi < 0) {				printf("Error : ÀûÀıÇÏÁö ¸øÇÑ Dbi°ªÀÔ´Ï´Ù!!\n");			}			else				break;		}				return;		case 1:			while(1) {				printf("Deo °ªÀ» ÀÔ·ÂÇØÁÖ½Ê½Ã¿À[m]. (ex. 25 mm => 2.5E-02) : ");				scanf("%lf", &Deo);				if(Deo < Dbi) {					printf("Error : Deo°¡ Dbiº¸´Ù ÀÛÀ¸¸é ¾ÈµË´Ï´Ù!!\n");					printf("Dbi : %lf[m], Deo : %lf[m]\n", Dbi, Deo);				}				else					break;			}						return;		case 2:			while(1) {				printf("Ns °ªÀ» ÀÔ·ÂÇØÁÖ½Ê½Ã¿À[int]. (ex. 4) : ");				scanf("%d", &Ns);							if(Ns < 1) {					printf("ÀûÀıÄ¡ ¸øÇÑ Ns °ªÀÔ´Ï´Ù!!\n");				}				else 					break;			}			return;		case 3:			while(1) {				printf("Pitch °ªÀ» ÀÔ·ÂÇØÁÖ½Ê½Ã¿À[m]. (ex. 50/m =>2.0E-02) : ");				scanf("%lf", &Pitch);							if(Pitch < 0) {					printf("Error : ÀûÀıÇÏÁö ¸øÇÑ ÇÇÄ¡°Å¸®ÀÔ´Ï´Ù!!\n");				}				else					break;			}			return;	}}void Print_given_geodata(void) {	printf("----------------------------------------------\n");	printf("Geometric given data ÃÖÁ¾ È®ÀÎ ÀÛ¾÷ÀÔ´Ï´Ù.\n");	printf("Dbi:%lf m\n", Dbi);	printf("Deo:%lf m\n", Deo);	printf("Ns:%d \n", Ns);	printf("Pitch:%lf m\n", Pitch);	printf("FB:%lf\n", FB);	printf("Dvi:%lf\n", Dvi);	printf("Dvo:%lf\n", Dvo);	printf("Doi:%lf\n", Doi);	printf("angle:%lf\n", angle);	printf("e:%lf\n", e);	printf("----------------------------------------------\n");}void write_given_tempdata(int option) {	int i = option;	switch(i) {		case 0:	// hot in			printf("Hot_in_tempÀ» ÀÔ·ÂÇØÁÖ¼¼¿ä[C] (ex. 70) : ");			scanf("%lf", &Hot_in_temp);	// ¼ö°¡ ¾Æ´Ñ ¹®ÀÚ¸¦ ¹Ş¾ÒÀ» ¶§ ¿¹¿ÜÃ³¸®ÇÏ´Â ¹æ¹ıÀ» Ã£¾Æº¸ÀÚ.			return;		case 1:		// hot out			printf("Hot_out_tempÀ» ÀÔ·ÂÇØÁÖ¼¼¿ä[C] (ex. 45) : ");			scanf("%lf", &Hot_out_temp);			return;		case 2:	// cold in			while(1) {				printf("Cold_in_tempÀ» ÀÔ·ÂÇØÁÖ¼¼¿ä[C] (ex.35) : ");				scanf("%lf", &Cold_in_temp);							if(Cold_in_temp >= Hot_out_temp) {					printf("ÀûÀıÇÏÁö ¸øÇÑ Cold in temperature °ªÀÔ´Ï´Ù.\n");					printf("Cold_in_temp : %lf[C], Hot_out_temp : %lf[C]\n", Cold_in_temp, Hot_out_temp);				}				else					break;			}			return;		case 3:	// partition			while(1) {				printf("LMTD Method¸¦ ¾µ ¶§ ¸î °³ÀÇ ±¸°£À¸·Î ³ª´©°Ú½À´Ï±î[int]? (ÃÖ¼Ò 20ÀÌ»ó) : ");				scanf("%d", &partition);				if(partition < 20 ) {					printf("¼ıÀÚ°¡ ³Ê¹« ÀÛ½À´Ï´Ù.\n");				}				else if(partition*GRID > 100000) {					printf("¼ıÀÚ°¡ ³Ê¹« Å®´Ï´Ù. ±¸°£ °¹¼ö°¡ %.0lfÀ» ³ÑÁö ¾Êµµ·Ï ÁÖÀÇÇØÁÖ¼¼¿ä.\n", (double)100000/GRID);				}				else					break;			}			return;	}}void Print_given_tempdata(void) {	printf("Thermal given data ÃÖÁ¾ È®ÀÎ °úÁ¤ÀÔ´Ï´Ù.\n");	printf("----------------------------------------------\n");	printf("Hot_in_temp : %lf\n", Hot_in_temp);	printf("Hot_out_temp:%lf\n", Hot_out_temp);	printf("Cold_in_temp:%lf\n", Cold_in_temp);	printf("n°³ÀÇ ±¸°£:%d\n",partition);	printf("DTh :%lf\n", DTh);	printf("----------------------------------------------\n");	}void write_given_parametric_factor(int option) {	int i = option;	switch(i) {		case 0 :			while(1) {				printf("Dbi, Deo, Doi, Pitch¿¡ ´ëÇÑ min factor¸¦ ±âÀÔÇÏ¼¼¿ä (ex. 0.8) : ");				scanf("%lf", &min_factor);				if(min_factor < 0 || min_factor > 1) {					printf("Error : min_factor ¹üÀ§´Â 0¿¡¼­ 1±îÁö ÀÔ´Ï´Ù.\n");				}				else					break;			}				return;		case 1 :			while(1) {				printf("Dbi, Deo, Doi, Pitch¿¡ ´ëÇÑ max factor¸¦ ±âÀÔÇÏ¼¼¿ä (ex. 1.2) : ");				scanf("%lf", &max_factor);				if(max_factor-min_factor<0.01 || max_factor > 3.3) {					printf("Error : max_factor´Â %1.2lf¿¡¼­ 3.3±îÁöÀÔ´Ï´Ù.\n", min_factor+0.01);				}				else 					break;			}				return;		case 2 :			while(1) {				printf("NsÀÇ ÃÖ¼Ú°ªÀ» ÀÔ·ÂÇØÁÖ¼¼¿ä (ex. 1) : ");				scanf("%d", &min_Ns);				if(min_Ns < 1) {					printf("Error : min_Ns´Â Àû¾îµµ 1ÀÌ»óÀÇ ÀÚ¿¬¼ö¿©¾ß¸¸ ÇÕ´Ï´Ù.\n");				}				else 					break;			}				return;		case 3 :			while(1) {				printf("NsÀÇ ÃÖ´ñ°ªÀ» ÀÔ·ÂÇØÁÖ¼¼¿ä(ex. 8) : ");				scanf("%d", &max_Ns);				if(max_Ns <= min_Ns) {					printf("Error : max_Ns´Â min_Ns(: %d)º¸´Ù Ä¿¾ßÇÕ´Ï´Ù.\n", min_Ns);				}				else					break;			}				return;	}}void Print_given_parametric_factor(int size) {	printf("Parametric Analysis µé¾î°¡±â Àü factor ÃÖÁ¾È®ÀÎ °úÁ¤ÀÔ´Ï´Ù.\n");	printf("----------------------------------------------\n");	printf("Dbi, Deo, Doi, PitchÀÇ min_factor °ª : %1.2lf\n", min_factor);	printf("Dbi, Deo, Doi, PitchÀÇ max_factor °ª : %1.2lf\n", max_factor);	printf("Ns ÃÖ¼Ú°ª : %d\n", min_Ns);	printf("Ns ÃÖ´ñ°ª : %d\n", max_Ns);	printf("ÇÑ º¯¼ö´ç Ãâ·ÂµÉ µ¥ÀÌÅÍ °¹¼ö : %d\n", size);	printf("----------------------------------------------\n");}void Initialize_Geoconditions(void) {	Dbi = Dbi_ini;	Deo = Deo_ini;	Doi = Doi_ini;	Ns = Ns_ini;	Pitch = Pitch_ini;}	//<\Thermal and Geometric given data>void create_property_csv(ProData* prodata, int add) {	printf("\n	>Creating [Water_Property.csv] File\n");	//°­Á¦ Çüº¯È¯.	int index;		FILE *fp;	fp = fopen("Water_Property.csv","w+");		fprintf(fp, "Temp[C],Thermal Conductivity[W/m*K],Viscosity[kg/m*s],Density[kg/m^3],Cp[J/kg*K],Enthalpy[J/kg]\n");	for(index =0;index<GRID*partition+add+1;index++) {		fprintf(fp, "%lf,%E,%E,%E,%E,%E\n", prodata[index].temperature, prodata[index].conductivity, prodata[index].viscosity, prodata[index].density, prodata[index].Cp, prodata[index].enthalpy);				//printf("		>>processing : [%3.1f %c]\n", (float)(index*100)/(GRID*partition+add+1), '%');	}	printf("	>Complete the making Water_Property.csv file!!\n");	fclose(fp);}void property_calculator(ProData* prodata, int add, double temp, double gap) {	//  	int index, i;		printf("	>°è»ê½ÃÀÛ info_range : %lf ~%lf,	gap : %lf\n", Cold_in_temp, Hot_in_temp, gap);	for(index=0; index<add+GRID*partition+1;index++) {		prodata[index].temperature = temp;		prodata[index].conductivity = 0;		prodata[index].viscosity = 0;		prodata[index].density=0;		prodata[index].Cp=0;		prodata[index].enthalpy=0;		temp += gap;				for(i=0;i<10;i++) {			prodata[index].conductivity += T_cond[i]*pow(temp, i);			prodata[index].viscosity += Viscosity[i]*pow(temp, i);			prodata[index].density += Density[i]*pow(temp, i);			prodata[index].Cp += 1000*Cp[i]*pow(temp, i);			prodata[index].enthalpy += 1000*Enthalpy[i]*pow(temp, i); //µÑ´Ù KJ ´ÜÀ§°¡ ±âº»ÀÎµ¥, Pr °ª µî 1000À» µû·Î °öÇÏ±â´Â ¹ø°Å·Î¿ì´Ï ¿©±â¼­ ±×³É 1000À» °öÇÑ´Ù.		}		//printf("		>>property °è»ê temp : %2.3lf C[%3.1f%c] ÁøÇàµÊ\n", temp, (float)index*100/(add+GRID*partition+1), '%');	}	printf("	>property °è»ê ¿Ï·á.\n");}void Calculate_HX_partly(ProData* prodata, Tube* ptube, Annular* pannular, Common* pcommon) {	//¾ÆÁ÷ Á¡°ËÀÌ ¾È µÈ ÇÔ¼ö Áß ÇÏ³ª.	int i=0, hot_ini_idx, cold_ini_idx;	//ÃÊ±âÈ­ °úÁ¤.	while(prodata[i].temperature < Cold_in_temp) {		i++;	}	cold_ini_idx = i;		while(prodata[i].temperature < Hot_out_temp) {		i++;	}	hot_ini_idx = i;	//printf("cold_ini_idx : %d,	hot_ini_idx : %d \n", cold_ini_idx, hot_ini_idx); // idx È®ÀÎ. csv ÆÄÀÏ¿¡¼­ °ªÀ» Ã£À» ¶§´Â ÀÌ µÎ °ª¿¡¼­ 2¾¿ ´õÇÏ¸é ÃÊ±â table index °ªÀÌ ³ª¿Â´Ù.		ptube[0].index = hot_ini_idx;	pannular[0].index = cold_ini_idx;	ptube[0].in_temp = prodata[ptube[0].index].temperature;	// Hot ÃÊ±â°ª ±âÀÔ	pannular[0].in_temp = prodata[pannular[0].index].temperature;	// Cold ÃÊ±â°ª ±âÀÔ	ptube[0].in_enthalpy = prodata[ptube[0].index].enthalpy;	// Hot »çÀÌµå ÃÊ±â ¿£Å»ÇÇ	pannular[0].in_enthalpy = prodata[pannular[0].index].enthalpy;// Cold ÃÊ±â ¿£Å»ÇÇ	for(i=0;i<partition;i++) {	// ÀÌ ¾Æ·¡ºÎÅÍ´Â °è¼Ó ¹İº¹°úÁ¤. Á» ´õ ¸Ş¸ğ¸® Àû°Ô ¾µ ¼ö ÀÖÀ¸³ª ³Ê¹« º¹ÀâÇØ¼­ ±¸º°ÇÏ±â ½±°Ô ±¸Á¶Ã¼¿¡ µ¥ÀÌÅÍ Á¶±İ ´õ ¾´´Ù.		// STEP 1: hot side Tin Tout ±¸ÇÏ±â				ptube[i+1].index = ptube[i].index + GRID; // Hot (i+1) Å×ÀÌºí ÀÎµ¦½º °ª ÀÔ·Â. ¾ê´Â °£°İÀÌ ÀÏÁ¤ÇÏ´Ù. ¾êµéÀº ³ªÁß¿¡ ±× µû·Î ¸¶Áö¸·¿¡¼­ ¸Ş¸ğ¸® ÇÒ´ç ¾È µÇ¼­ ¿À·ù ÀÏÀ¸Å³ °Çµ¥ ±× ºÎºĞÀº ´Ù½Ã µû·Î ¼Õ ºÁ¾ß ÇÑ´Ù.		ptube[i].out_temp = ptube[i].in_temp+DTh;// Hot(i) out ¿Âµµ ±âÀÔ.		ptube[i+1].in_temp = ptube[i].out_temp; // i¹øÂ° outÀÌ i+1¹øÂ° in°ú µ¿ÀÏÇÔ.				//STEP2 : ¿­±³È¯·® °è»êÇÏ±â		ptube[i].out_enthalpy = prodata[ptube[i+1].index].enthalpy; // hot(i) out ¿£Å»ÇÇ°ª		ptube[i+1].in_enthalpy = ptube[i].out_enthalpy;	// hot(i+1) in ¿£Å»ÇÇ°ª 		pcommon[i].HX = mh*(ptube[i].out_enthalpy-ptube[i].in_enthalpy);	// part i¿¡¼­ÀÇ ¿­±³È¯·® ±¸ÇÔ.				//STEP3 : Cold_out Å½»öÈÄ i+1±îÁö ±âÀÔ.		pannular[i+1].index = pannular[i].index+1; // pannular i+1 ÀÎµ¦½º ÃÊ±âÈ­		while(pcommon[i].HX > mc*((prodata[pannular[i+1].index].enthalpy)-(prodata[pannular[i].index].enthalpy))) {			pannular[i+1].index++;		}// ÀÚµ¿À¸·Î cold(i+1) Å×ÀÌºí ÀÎµ¦½º ±âÀÔ.		pannular[i].out_enthalpy = prodata[pannular[i+1].index].enthalpy;		pannular[i+1].in_enthalpy = pannular[i].out_enthalpy;		pannular[i].out_temp = prodata[pannular[i+1].index].temperature;		pannular[i+1].in_temp = pannular[i].out_temp;				//STEP4: ³ª¸ÓÁö ¿Âµµ °ü·Ã ÇÁ·ÎÆÛÆ¼ ÀüºÎ ±¸ÇÏ±â		ptube[i].avg_temp=(prodata[ptube[i].index].temperature + prodata[ptube[i+1].index].temperature)/2;		ptube[i].conductivity=(prodata[ptube[i].index].conductivity + prodata[ptube[i+1].index].conductivity)/2;		ptube[i].viscosity=(prodata[ptube[i].index].viscosity + prodata[ptube[i+1].index].viscosity)/2;		ptube[i].density=(prodata[ptube[i].index].density + prodata[ptube[i+1].index].density)/2;		ptube[i].Cp=(prodata[ptube[i].index].Cp + prodata[ptube[i+1].index].Cp)/2;				pannular[i].avg_temp=(prodata[pannular[i].index].temperature + prodata[pannular[i+1].index].temperature)/2;		pannular[i].conductivity=(prodata[pannular[i].index].conductivity + prodata[pannular[i+1].index].conductivity)/2;		pannular[i].viscosity=(prodata[pannular[i].index].viscosity + prodata[pannular[i+1].index].viscosity)/2;		pannular[i].density=(prodata[pannular[i].index].density + prodata[pannular[i+1].index].density)/2;		pannular[i].Cp=(prodata[pannular[i].index].Cp + prodata[pannular[i+1].index].Cp)/2;				//À§ ÄÚµåµé Á¡°Ë¿ë Ãâ·Â ÄÚµå.		/*printf("hot[table idx : %d] : %lf C, %lf W/mK, %lf Pa*s, %lf kg/m^3, %lf kJ/kg*K\n", ptube[i].index, ptube[i].avg_temp, ptube[i].conductivity, ptube[i].viscosity, ptube[i].density, ptube[i].Cp);		printf("cold[table idx : %d] : %lf C, %lf W/mK, %lf Pa*s, %lf kg/m^3, %lf kJ/kg*K\n", pannular[i].index, pannular[i].avg_temp, pannular[i].conductivity, pannular[i].viscosity, pannular[i].density, pannular[i].Cp);		printf("HX[%d ¹øÂ°] : %lf \n", i, pcommon[i].HX);*/				//À§ ±îÁö´Â ¹İµå½Ã! ±¸Á¶Ã¼ÀÇ ¿Âµµ °ü·Ã ÇÁ·ÎÆÛÆ¼µéÀ» ÀüºÎ Ã¤¿ö¾ß ÇÑ´Ù. in_temp, index, in_enthalpy´Â i+1°ü·Ã ±âÀÔÀ» Çß´ÂÁö È®ÀÎÇÒ °Í.		// step4 ±îÁö´Â ÀÌ»ó ¹«. csv Ãâ·Â ÆÄÀÏÀÌ³ª ¸¸µéÀÚ.		//STEP 5 : tube side ÁÖ¿ä °ªµé ±¸ÇÏ±â hi °ª°ú DPÀº °¡Àå ¸¶Áö¸·¿¡ ±¸ÇÑ´Ù.		ptube[i].Pr = cal_tube_Pr(ptube[i].Cp, ptube[i].viscosity, ptube[i].conductivity);		ptube[i].e_ratio = cal_tube_e_ratio();		ptube[i].p_ratio = cal_tube_p_ratio();		ptube[i].angle_ratio = cal_tube_angle_ratio();		ptube[i].velocity = cal_tube_velocity(ptube[i].density);		ptube[i].Re = cal_tube_Re(ptube[i].velocity, ptube[i].density, ptube[i].viscosity);		ptube[i].Nu = cal_tube_Nu(ptube[i].Re, ptube[i].e_ratio, ptube[i].p_ratio, ptube[i].angle_ratio, ptube[i].Pr);		ptube[i].hi = cal_tube_hi(ptube[i].Nu, ptube[i].conductivity);		ptube[i].fi = cal_tube_fi(ptube[i].Re, ptube[i].e_ratio, ptube[i].p_ratio, ptube[i].angle_ratio);				//STEP 6: annular sideÀÇ ÁÖ¿ä °ªµé ±¸ÇÏ±â ho °ª°ú DP´Â ³ªÁß¿¡ ±¸ÇÑ´Ù.		pannular[i].Pr = cal_annular_Pr(pannular[i].Cp, pannular[i].viscosity, pannular[i].conductivity);		pannular[i].e_ratio = cal_annular_e_ratio();		pannular[i].p_ratio = cal_annular_p_ratio();		pannular[i].angle_ratio = cal_annular_angle_ratio();		pannular[i].r_ratio = cal_annular_r_ratio();		pannular[i].Dhyd = cal_annular_Dhyd();		pannular[i].Aeff = cal_annular_Aeff();		pannular[i].velocity = cal_annular_velocity(pannular[i].density, pannular[i].Aeff);		pannular[i].Re = cal_annular_Re(pannular[i].velocity, pannular[i].density, pannular[i].Dhyd, pannular[i].viscosity);		pannular[i].ef = cal_annular_ef(pannular[i].Re, pannular[i].e_ratio, pannular[i].p_ratio, pannular[i].angle_ratio, pannular[i].r_ratio);		pannular[i].fo = cal_annular_fo(pannular[i].Re, pannular[i].r_ratio, pannular[i].ef);		pannular[i].Nu = cal_annular_Nu(pannular[i].fo, pannular[i].Re, pannular[i].Pr, pannular[i].e_ratio, pannular[i].p_ratio, pannular[i].r_ratio);		pannular[i].ho = cal_annular_ho(pannular[i].Nu, pannular[i].conductivity, pannular[i].Dhyd);				//STEP 7: UA, HX, Length µî common sideÀÇ °ªµéÀ» ÀüºÎ ±¸ÇÑ´Ù. 		//pcommon[i].DTln = ((ptube[i].in_temp-pannular[i].in_temp)-(ptube[i].out_temp-ptube[i].out_temp))/ln((ptube[i].in_temp-pannular[i].in_temp)/(ptube[i].out_temp-ptube[i].out_temp));  ÀÇ¹Ì ¾ø´Â °³³ë°¡´Ù..		pcommon[i].DTln = cal_common_DTln(ptube[i].in_temp, ptube[i].out_temp, pannular[i].in_temp, pannular[i].out_temp);		pcommon[i].Cucond = cal_common_Cucond(ptube[i].avg_temp, pannular[i].avg_temp);		pcommon[i].UA = cal_common_UA(pcommon[i].DTln, pcommon[i].HX);		pcommon[i].length = cal_common_length(ptube[i].hi, pannular[i].ho, pcommon[i].Cucond, pcommon[i].UA);		pcommon[i].height = cal_common_height(pcommon[i].length);		pcommon[i].volume = cal_common_volume(pcommon[i].height);		pcommon[i].Ai = cal_common_Ai(pcommon[i].length);		pcommon[i].Ui = cal_common_Ui(pcommon[i].UA, pcommon[i].Ai);		pcommon[i].Ao = cal_common_Ao(pcommon[i].length);		pcommon[i].Uo = cal_common_Uo(pcommon[i].UA, pcommon[i].Ao);				//STEP 8 : DPi DPo °ª ±¸ÇÏ±â		ptube[i].DP = cal_tube_DP(ptube[i].fi, pcommon[i].length, ptube[i].density, ptube[i].velocity);		pannular[i].DP = cal_annular_DP(pannular[i].fo, pcommon[i].length, pannular[i].Dhyd, pannular[i].density, pannular[i].velocity);		}}void create_counterflow_csv(char* filename, Tube* ptube, Annular* pannular, Common* pcommon) {	// Filenameµµ ¹Ş¾Æ¼­ ÀûÀıÈ÷ ÀÌ¸§µµ ¹Ù²Ü ¼ö ÀÖ°Ô ¸¸µéÀÚ.	int index;	char name[80] = "Conditions_";	char name1[80] = "CounterFlow_LMTD_Tubeside_";	char name2[80] = "CounterFlow_LMTD_Annularside_";	char name3[80] = "CounterFlow_LMTD_Results_";	FILE* fp;		if(!strcmp("initial.csv", filename)) {		strcat(name, filename);		printf("\n	>Creating[%s] File\n", name);		fp = fopen(name, "w+");				fprintf(fp, "Geometric Conditions\n");		fprintf(fp, "Dbi[m],Deo[m],tw[m],Ns,Pitch[m],Dcan[m],R,FB,Dvi[m],Dvo[m],Doi[m],angle,e\n");		fprintf(fp, "%E,%E,%E,%d,%E,%E,%E,%E,%E,%E,%E,%E,%E\n", Dbi, Deo, tw, Ns, Pitch, Dcan, R, FB, Dvi, Dvo, Doi, angle, e);				fprintf(fp, "Thermal and Fluid Conditions\n");		fprintf(fp, "Tube Side,,,Annular Side,,,\n");		fprintf(fp, "Hot_in_temp[C],Hot_out_temp[C],mh[kg/s],Cold_in_temp[C],Cold_out_temp[C], mc[kg/s]\n");		fprintf(fp, "%lf, %lf, %lf, %lf, %lf, %lf\n",Hot_in_temp,Hot_out_temp,mh,Cold_in_temp,Cold_out_temp, mc);				fclose(fp);				//Step2 : Tubeside µ¥ÀÌÅÍ csv ¸¸µé±â		double x_position = pcommon[partition].length;		printf("\n	>Creating [CounterFlow_LMTD_Tubeside_initial] File\n");		strcat(name1, filename);		fp = fopen(name1, "w+");		fprintf(fp, "index[#],in_temp[C],out_temp[C],avg_temp[C],in_enthalpy[J],out_enthalpy[J],conductivity[W/mK],visocosity[],density[kg/m^3],Cp[J/kg*K],Pr,e_ratio,p_ratio,angle_ratio,velocity,Re,Nu,hi,fi,DP,,Length[m], x_position[m]\n");		fprintf(fp, "average & Sum values\n");		fprintf(fp, "%d,%lf,%lf,%lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", partition,ptube[partition].in_temp,ptube[partition].out_temp,ptube[partition].avg_temp,ptube[partition].in_enthalpy,ptube[partition].out_enthalpy,ptube[partition].conductivity,ptube[partition].viscosity,ptube[partition].density,ptube[partition].Cp,ptube[partition].Pr,ptube[partition].e_ratio,ptube[partition].p_ratio,ptube[partition].angle_ratio,ptube[partition].velocity,ptube[partition].Re,ptube[partition].Nu,ptube[partition].hi,ptube[partition].fi,ptube[partition].DP,pcommon[partition].length);		fprintf(fp, "Details!\n");		for(index=0;index<partition;index++) {			fprintf(fp, "%d,%lf,%lf,%lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E,%1.5E\n", index,ptube[index].in_temp,ptube[index].out_temp,ptube[index].avg_temp,ptube[index].in_enthalpy,ptube[index].out_enthalpy,ptube[index].conductivity,ptube[index].viscosity,ptube[index].density,ptube[index].Cp,ptube[index].Pr,ptube[index].e_ratio,ptube[index].p_ratio,ptube[index].angle_ratio,ptube[index].velocity,ptube[index].Re,ptube[index].Nu,ptube[index].hi,ptube[index].fi,ptube[index].DP,pcommon[index].length,x_position);			x_position -= pcommon[index].length;		}		printf("\n	Complete : Creating[CounterFlow_LMTD_Tubeside_initial]File\n");		fclose(fp);				//Step3 : Annular side µ¥ÀÌÅÍ csv ¸¸µé±â		x_position = pcommon[partition].length;		printf("\n	>Creating[CounterFlow_LMTD_Annularside_initial] File\n");		strcat(name2, filename);		fp = fopen(name2, "w+");				fprintf(fp, "index[#],in_temp[C],out_temp[C],avg_temp[C],in_enthalpy[J],out_enthalpy[J],conductivity[W/mK],visocosity[],density[kg/m^3],Cp[J/kg*K],Pr,e_ratio,p_ratio,angle_ratio,r_ratio,Dhyd,Aeff,velocity,Re,Nu,ef,ho,fo,DP,,Length[m],x_position[m]\n"); //15,17,18,21		fprintf(fp, "average & Sum Values\n");		fprintf(fp, "%d,%lf,%lf,%lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", partition,pannular[partition].in_temp,pannular[partition].out_temp,pannular[partition].avg_temp,pannular[partition].in_enthalpy,pannular[partition].out_enthalpy,pannular[partition].conductivity,pannular[partition].viscosity,pannular[partition].density,pannular[partition].Cp,pannular[partition].Pr,pannular[partition].e_ratio,pannular[partition].p_ratio,pannular[partition].angle_ratio,pannular[partition].r_ratio,pannular[partition].Dhyd,pannular[partition].Aeff,pannular[partition].velocity,pannular[partition].Re,pannular[partition].Nu,pannular[partition].ef,pannular[partition].ho,pannular[partition].fo,pannular[partition].DP,pcommon[partition].length);		fprintf(fp, "Details!\n");		for(index=0;index<partition;index++) {			fprintf(fp, "%d,%lf,%lf,%lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E,%1.5E\n", index,pannular[index].in_temp,pannular[index].out_temp,pannular[index].avg_temp,pannular[index].in_enthalpy,pannular[index].out_enthalpy,pannular[index].conductivity,pannular[index].viscosity,pannular[index].density,pannular[index].Cp,pannular[index].Pr,pannular[index].e_ratio,pannular[index].p_ratio,pannular[index].angle_ratio,pannular[index].r_ratio,pannular[index].Dhyd,pannular[index].Aeff,pannular[index].velocity,pannular[index].Re,pannular[index].Nu,pannular[index].ef,pannular[index].ho,pannular[index].fo,pannular[index].DP,pcommon[index].length,x_position);			x_position -= pcommon[index].length;		}		printf("\n	Complete : Creating[CounterFlow_LMTD_Annularside_initial]File\n");		fclose(fp);				//Step4 : Common side µ¥ÀÌÅÍ csv ¸¸µé±â		printf("\n	Creating[CounterFlow_LMTD_Results_initial] File\n");		strcat(name3, filename);		fp = fopen(name3, "w+");		fprintf(fp, "index[#],HX[W],length[m],height[m],volume[m^3],DTln[K],UA[W/K],Ui[W/K*m^2],Ai[m^2],Uo[W/K*m^2],Ao[m^2],Cucond[W/mK],,length[m]\n");		fprintf(fp, "average & Sum Values\n");		fprintf(fp, "%d,%1.5E,%1.5E,%1.5E,%1.5E,%2.4lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E\n", partition,pcommon[partition].HX,pcommon[partition].length,pcommon[partition].height,pcommon[partition].volume,pcommon[partition].DTln,pcommon[partition].UA,pcommon[partition].Ui,pcommon[partition].Ai,pcommon[partition].Uo,pcommon[partition].Ao,pcommon[partition].Cucond);		fprintf(fp, "Details!!\n");		for(index = 0;index<partition;index++){			fprintf(fp, "%d,%1.5E,%1.5E,%1.5E,%1.5E,%2.4lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E\n", index,pcommon[index].HX,pcommon[index].length,pcommon[index].height,pcommon[index].volume,pcommon[index].DTln,pcommon[index].UA,pcommon[index].Ui,pcommon[index].Ai,pcommon[index].Uo,pcommon[index].Ao,pcommon[index].Cucond);		}		printf("\n	Complete : Creating[CounterFlow_LMTD_Results_initial]File\n");		fclose(fp);		// Ãß°¡·Î ÃÖÁ¾ Æò±Õ µ¥ÀÌÅÍ¸¦ ´ã°í ÀÖ´Â csvÆÄÀÏÀ» ÀúÀåÇØ¾ß ÇÑ´Ù.	}	else if (!strcmp("Modify_Ns.csv", filename)) {	//Ns´Â µû·Î ÇØÁà¾ß ÇÑ´Ù. ¹üÀ§°¡ ´Ş¶ó¼­.		strcat(name, filename);		printf("\n	>Creating[%s] File\n", name);		fp = fopen(name, "w+");				/*fprintf(fp, "Geometric Conditions\n");		fprintf(fp, "Dbi[m],Deo[m],tw[m],Ns,Pitch[m],Dcan[m],R,FB,Dvi[m],Dvo[m],Doi[m],angle,e\n");		fprintf(fp, "%E,%E,%E,%d,%E,%E,%E,%E,%E,%E,%E,%E,%E\n", Dbi, Deo, tw, Ns, Pitch, Dcan, R, FB, Dvi, Dvo, Doi, angle, e);		*/	 // ½Ã°£ ºÎÁ·À¸·Î geometric conditionÀÌ ÆÑÅÍº°·Î º¯ÇÏ´Â °É ±¸Çö ¸øÇÔ.		fprintf(fp, "Thermal and Fluid Conditions\n");		fprintf(fp, "Tube Side,,,Annular Side,,,\n");		fprintf(fp, "Hot_in_temp[C],Hot_out_temp[C],mh[kg/s],Cold_in_temp[C],Cold_out_temp[C], mc[kg/s]\n");		fprintf(fp, "%lf, %lf, %lf, %lf, %lf, %lf\n",Hot_in_temp,Hot_out_temp,mh,Cold_in_temp,Cold_out_temp, mc);				fclose(fp);		/////////		strcat(name1, filename);		printf("\n	>Creating [%s] File\n", name1);		fp= fopen(name1, "w+");				fprintf(fp, "index[#],conductivity[W/mK],viscosity[kg/m*s],density[kg/m^3],Cp[J/kg*K],Pr,e_ratio,p_ratio,angle_ratio,velocity,Re,Nu,hi,fi,DP,,length[m]\n");		for(index = 0;index<max_Ns-min_Ns+1;index++) {			fprintf(fp, "%d,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", min_Ns+index,ptube[index].conductivity,ptube[index].viscosity,ptube[index].density,ptube[index].Cp,ptube[index].Pr,ptube[index].e_ratio,ptube[index].p_ratio,ptube[index].angle_ratio,ptube[index].velocity,ptube[index].Re,ptube[index].Nu,ptube[index].hi,ptube[index].fi,ptube[index].DP,pcommon[index].length);		}		printf("\n	>Complete : Creating[%s] File\n", name1);		fclose(fp);		//////////////////		strcat(name2,filename);		printf("\n	>Creating [%s] File\n", name2);		fp = fopen(name2, "w+");			fprintf(fp, "index[#],conductivity[W/mK],viscosity[kg/m*s],density[kg/m^3],Cp[J/kg*K],Pr,e_ratio,p_ratio,angle_ratio,r_ratio,Dhyd,Aeff,velocity,Re,Nu,ef,ho,fo,DP,,length[m]\n");				for(index = 0;index<max_Ns-min_Ns+1;index++) {			fprintf(fp, "%d,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", min_Ns+index,pannular[index].conductivity,pannular[index].viscosity,pannular[index].density,pannular[index].Cp,pannular[index].Pr,pannular[index].e_ratio,pannular[index].p_ratio,pannular[index].angle_ratio,pannular[index].r_ratio,pannular[index].Dhyd,pannular[index].Aeff,pannular[index].velocity,pannular[index].Re,pannular[index].Nu,pannular[index].ef,pannular[index].ho,pannular[index].fo,pannular[index].DP,pcommon[index].length);		}		printf("\n	Complete : Creating[%s] File\n", name2);		fclose(fp);		/////////////////////		strcat(name3, filename);		printf("\n	>Creating [%s] File\n", name3);		fp=fopen(name3, "w+");		fprintf(fp, "index[#],HX[W],length[m],height[m],volume[m^3],DTln[K],UA[W/K],Ui[W/K*m^2],Ai[m^2],Uo[W/K*m^2],Ao[m^2],Cucond[W/mK],,length[m]\n");				for(index = 0; index<max_Ns-min_Ns+1;index++) {			fprintf(fp, "%d,%1.5E,%1.5E,%1.5E,%1.5E,%2.4lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", min_Ns+index,pcommon[index].HX,pcommon[index].length,pcommon[index].height,pcommon[index].volume,pcommon[index].DTln,pcommon[index].UA,pcommon[index].Ui,pcommon[index].Ai,pcommon[index].Uo,pcommon[index].Ao,pcommon[index].Cucond,pcommon[index].length);		}		printf("\n	Complete : Creating [%s] File\n", name3);		fclose(fp);	}		else {	// parametric analysis ÀÏ °æ¿ì ±×³É ÇÑ ¹®¼­¿¡ factor¿¡ °üÇÑ ÃÖÁ¾°ªµé¸¸ ¸ğ¾Æ³õ´Â´Ù.		strcat(name, filename);		printf("\n	>Creating[%s] File\n", name);		fp = fopen(name, "w+");				/*fprintf(fp, "Geometric Conditions\n");		fprintf(fp, "Dbi[m],Deo[m],tw[m],Ns,Pitch[m],Dcan[m],R,FB,Dvi[m],Dvo[m],Doi[m],angle,e\n");		fprintf(fp, "%E,%E,%E,%d,%E,%E,%E,%E,%E,%E,%E,%E,%E\n", Dbi, Deo, tw, Ns, Pitch, Dcan, R, FB, Dvi, Dvo, Doi, angle, e);*/				fprintf(fp, "Thermal and Fluid Conditions\n");		fprintf(fp, "Tube Side,,,Annular Side,,,\n");		fprintf(fp, "Hot_in_temp[C],Hot_out_temp[C],mh[kg/s],Cold_in_temp[C],Cold_out_temp[C], mc[kg/s]\n");		fprintf(fp, "%lf, %lf, %lf, %lf, %lf, %lf\n",Hot_in_temp,Hot_out_temp,mh,Cold_in_temp,Cold_out_temp, mc);				fclose(fp);		////////		strcat(name1, filename);		printf("\n	>Creating [%s] File\n", name1);		fp= fopen(name1, "w+");		fprintf(fp, "index[#],conductivity[W/mK],viscosity[kg/m*s],density[kg/m^3],Cp[J/kg*K],Pr,e_ratio,p_ratio,angle_ratio,velocity,Re,Nu,hi,fi,DP,, length[m]\n");		for(index = 0;index<size+1;index++) {			fprintf(fp, "%lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", min_factor+0.01*index,ptube[index].conductivity,ptube[index].viscosity,ptube[index].density,ptube[index].Cp,ptube[index].Pr,ptube[index].e_ratio,ptube[index].p_ratio,ptube[index].angle_ratio,ptube[index].velocity,ptube[index].Re,ptube[index].Nu,ptube[index].hi,ptube[index].fi,ptube[index].DP,pcommon[index].length);		}		printf("\n	>Complete : Creating[%s] File\n", name1);		fclose(fp);		//////////////////		strcat(name2,filename);		printf("\n	>Creating [%s] File\n", name2);		fp = fopen(name2, "w+");				fprintf(fp, "index[#],conductivity[W/mK],viscosity[kg/m*s],density[kg/m^3],Cp[J/kg*K],Pr,e_ratio,p_ratio,angle_ratio,r_ratio,Dhyd,Aeff,velocity,Re,Nu,ef,ho,fo,DP,,length[m]\n");				for(index = 0;index<size+1;index++) {			fprintf(fp, "%lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", min_factor+0.01*index,pannular[index].conductivity,pannular[index].viscosity,pannular[index].density,pannular[index].Cp,pannular[index].Pr,pannular[index].e_ratio,pannular[index].p_ratio,pannular[index].angle_ratio,pannular[index].r_ratio,pannular[index].Dhyd,pannular[index].Aeff,pannular[index].velocity,pannular[index].Re,pannular[index].Nu,pannular[index].ef,pannular[index].ho,pannular[index].fo,pannular[index].DP,pcommon[index].length);		}		printf("\n	Complete : Creating[%s] File\n", name2);		fclose(fp);		/////////////////////		strcat(name3, filename);		printf("\n	>Creating [%s] File\n", name3);		fp=fopen(name3, "w+");		fprintf(fp, "index[#],HX[W],length[m],height[m],volume[m^3],DTln[K],UA[W/K],Ui[W/K*m^2],Ai[m^2],Uo[W/K*m^2],Ao[m^2],Cucond[W/mK],,length[m]\n");				for(index = 0; index<size+1;index++) {			fprintf(fp, "%lf,%1.5E,%1.5E,%1.5E,%1.5E,%2.4lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", min_factor+0.01*index,pcommon[index].HX,pcommon[index].length,pcommon[index].height,pcommon[index].volume,pcommon[index].DTln,pcommon[index].UA,pcommon[index].Ui,pcommon[index].Ai,pcommon[index].Uo,pcommon[index].Ao,pcommon[index].Cucond,pcommon[index].length);		}		printf("\n	Complete : Creating [%s] File\n", name3);		fclose(fp);	}} 	//<Simple calculated data : common>void calculate_FB(void){	FB = (1-R)*M_PI*Dbi/Ns;}	// Àü¿ªº¯¼ö´Â µû·Î ÀÔ·Â°ªÀ¸·Î ¾²Áö ¾Ê¾Æµµ µÈ´Ù.void calculate_Dvi(void){	Dvi = sqrt(pow(Dbi,2.0)+(Ns*(Deo-Dbi-2*tw)*FB)/M_PI);}void calculate_Dvo(void){	Dvo = Dvi+2*tw;}void calculate_Doi(void){	Doi = Deo+1.5E-04;}void calcuate_angle(void){	angle = atan((M_PI*Dvo)/(Ns*Pitch))*180/M_PI;}void calculate_e(void){	e=(Deo-(Dbi+2*tw))/2;}void calculate_DTh(void) {	//double sub = Hot_in_temp-Hot_out_temp;	DTh = (Hot_in_temp - Hot_out_temp)/partition; 	// 1.#INF00ÇØ°á. partition Çü double·Î ÇØ³õ°í %d·Î °ª¹Ş¾Æ¼­ ³ª¿Â Çö»ó.}void initialize_copper(void) {	copper[0].temperature = -73;	copper[0].conductivity = 413;	copper[1].temperature = 0;	copper[1].conductivity = 401;	copper[2].temperature = 127;	copper[2].conductivity = 392;	copper[3].temperature = 327;	copper[3].conductivity = 383;	copper[4].temperature = 527;	copper[4].conductivity = 371;	copper[5].temperature = 727;	copper[5].conductivity = 357;	copper[6].temperature = 927;	copper[6].conductivity = 342;}	//<\Simple calculated data : common>	//<Simple calculated data : tube>	¹İÈ¯°ª ÀüºÎ´Ù double·Îdouble cal_tube_Pr(double Cp, double viscosity, double conductivity){	return Cp*viscosity/conductivity;}double cal_tube_e_ratio(void){	return e/Dvi;} double cal_tube_p_ratio(void){	return Pitch/Dvi;}double cal_tube_angle_ratio(void){	return angle/90;}double cal_tube_velocity(double density){	return 4*mh/(M_PI*density*pow(Dvi,2.0));}double cal_tube_Re(double velocity, double density, double viscosity){	return velocity*density*Dvi/viscosity;}double cal_tube_Nu(double Re, double e_ratio, double p_ratio, double angle_ratio, double Pr){	return 0.064*pow(Re, 0.773)*pow(e_ratio, -0.242)*pow(p_ratio, -0.108)*pow(angle_ratio, -0.599)*pow(Pr, 0.4);}double cal_tube_fi(double Re, double e_ratio, double p_ratio, double angle_ratio){	return 1.209*pow(Re, -0.261)*pow(e_ratio,1.26-0.05*p_ratio)*pow(p_ratio, -1.660+2.033*e_ratio)*pow(angle_ratio, -2.699+3.67*e_ratio);}double cal_tube_hi(double Nu, double conductivity){	return Nu*conductivity/Dvi;}double cal_tube_DP(double fi, double length, double density, double velocity){	return fi*length/(2*Dvi)*density*pow(velocity, 2.0);}	//<\Simple calculated data : tube>	//<Simple calculated data : annular>double cal_annular_Pr(double Cp, double viscosity, double conductivity) {	return Cp*viscosity/conductivity;}double cal_annular_e_ratio(void) {	return e/Dvo;} // only Àü¿ªº¯¼ödouble cal_annular_p_ratio(void){	return Pitch/Dvo;} // only Àü¿ªº¯¼ödouble cal_annular_angle_ratio(void){	return angle/90;}double cal_annular_r_ratio(void){	return Dvo/Doi;} // only Àü¿ªº¯¼ödouble cal_annular_Dhyd(void){	return Doi-Dvo;} // only Àü¿ªº¯¼ödouble cal_annular_Aeff(void){	return M_PI/4*(pow(Doi, 2.0)-pow(Dvo, 2.0));} // only Àü¿ªº¯¼ödouble cal_annular_velocity(double density, double Aeff){	return mc/(density*Aeff);}double cal_annular_Re(double velocity, double density, double Dhyd, double viscosity){	return velocity*density*Dhyd/viscosity;}double cal_annular_ef(double Re, double e_ratio, double p_ratio, double angle_ratio, double r_ratio){	return (1+222*pow(Re,0.09)*pow(e_ratio,2.4)*pow(p_ratio,-0.49)*pow(angle_ratio,-0.38)*pow(r_ratio,2.22));}double cal_annular_fo(double Re, double r_ratio, double ef) {	return 4*pow(1.7372*log(Re/(1.964*log(Re)-3.8215)),-2)*(1+0.0925*r_ratio)*ef;}double cal_annular_Nu(double fo, double Re, double Pr, double e_ratio, double p_ratio, double r_ratio) {	// v 0.9 ¹öÀü¿¡¼­ ¹ß»ıÇÑ ¿À·ù ÁÖ ¿øÀÎ.	//A/B*C±¸Á¶	double fo_modi = fo/8;	double A_part = fo_modi*Re*Pr;	double B_part = (1+9.77*pow(fo_modi, 0.5)*(pow(Pr, 0.66666666666666666)-1));	//  pow ¾ÈÀÇ º¯¼öµéÀÇ °è»êÀº ÀÚµ¿À¸·Î Ã³¸®µÇÁö ¾Ê´Â´Ù.	double C_part = pow(Re,-0.20)*pow(e_ratio,-0.32)*pow(p_ratio,-0.28)*pow(r_ratio,-1.64);	/*printf("ÇöÀç fo °ª : %E, Re °ª : %E, Pr °ª : %E, e* = %E, p* = %E, r* = %E °ªÀÔ´Ï´Ù.\n", fo, Re, Pr, e_ratio, p_ratio, r_ratio);	printf("\nA_part : %lf\nB_part : %lf\nC_part : %lf\nNu : %lfÀÔ´Ï´Ù.\n", A_part, B_part, C_part,A_part/B_part*C_part);	system("pause");*/	return A_part/B_part*C_part;	//return (((fo/8)*Re*Pr)/(1+(9.77*sqrt(fo/8)*(pow(Pr,2/3)-1))))*pow(Re,-0.2)*pow(e_ratio,-0.32)*pow(p_ratio,-0.28)*pow(r_ratio,-1.64);}double cal_annular_ho(double Nu, double conductivity, double Dhyd){	return Nu*conductivity/Dhyd;}double cal_annular_DP(double fo, double length, double Dhyd, double density, double velocity){	return fo*length/(2*Dhyd)*density*pow(velocity, 2.0);}	//<\Simple calculated data : annular>	//<Simple calculated data : objects>double cal_common_DTln(double hot_in, double hot_out, double cold_in, double cold_out){	return (((hot_in-cold_in)-(hot_out-cold_out))/log((hot_in-cold_in)/(hot_out-cold_out)));}double cal_common_Cucond(double hot_avg, double cold_avg){	double avg_temp = (hot_avg+cold_avg)/2;	double ratio;	int i=0;	while(avg_temp > copper[i].temperature) {	// 927µµº¸´Ù ³ôÀ¸¸é ¿ÀÀÛµ¿.		i++;	}	// ³ôÀº ÀÎµ¦½º ÀÚµ¿ ¹İÈ¯.	if(i==0) {		return copper[0].temperature;	}	else {		ratio = (avg_temp - copper[i-1].temperature)/(copper[i].temperature - copper[i-1].temperature);		return copper[i-1].conductivity+ratio*(copper[i].conductivity - copper[i-1].conductivity);	}};double cal_common_UA(double DTln, double HX){	return HX/DTln;}double cal_common_length(double hi, double ho, double Cucond, double UA){	return UA*((1/(hi*M_PI*Dvi))+((log(Dvo/Dvi))/(2*M_PI*Cucond))+(1/(ho*M_PI*Dvo)));}double cal_common_height(double length){	return length/(M_PI*Dcan)*(Doi+2*tw);}double cal_common_volume(double height){ // °ø½Ä ¹ÌÈ®ÀÎ ÇÔ¼ö	return (Dcan+Doi+2*tw)*(Dcan+Doi+2*tw)*height*M_PI/4;}double cal_common_Ai(double length){	return M_PI*Dvi*length;}double cal_common_Ui(double UA, double Ai){	return UA/Ai;}double cal_common_Ao(double length){	return M_PI*Dvo*length;}double cal_common_Uo(double UA, double Ao){	return UA/Ao;}	//<\Simple calculated data : objects>		//<Evaluate Sum of Avg Values>void SumNAvg_Common(Common* pcommon)  {	// partitionÀº Àü¿ªº¯¼öÀÓ. 	int i;	// ÃÊ±âÈ­ °úÁ¤	pcommon[partition].HX = 0;	// Sum	pcommon[partition].length = 0;	// Sum //°¡Àå Áß¿äÇÑ º¯¼ö.	pcommon[partition].height = 0; // Sum	pcommon[partition].volume = 0; // Sum	pcommon[partition].DTln = 0;	// avg	pcommon[partition].UA = 0; // Sum	pcommon[partition].Ui = 0; // avg	pcommon[partition].Ai = 0; // Sum	pcommon[partition].Uo = 0;// avg	pcommon[partition].Ao = 0; // Sum	pcommon[partition].Cucond = 0; // avg		for(i=0;i<partition;i++) {	pcommon[partition].HX += pcommon[i].HX;		pcommon[partition].length += pcommon[i].length;	 	pcommon[partition].height += pcommon[i].height; 	pcommon[partition].volume += pcommon[i].volume; 	pcommon[partition].DTln += pcommon[i].DTln * pcommon[i].length;		pcommon[partition].UA += pcommon[i].UA; 	pcommon[partition].Ui += pcommon[i].Ui * pcommon[i].length; 	pcommon[partition].Ai += pcommon[i].Ai; 	pcommon[partition].Uo += pcommon[i].Uo * pcommon[i].length;	pcommon[partition].Ao += pcommon[i].Ao; 	pcommon[partition].Cucond += pcommon[i].Cucond * pcommon[i].length; 			}	pcommon[partition].DTln /= pcommon[partition].length;	pcommon[partition].Ui /= pcommon[partition].length;	pcommon[partition].Uo /= pcommon[partition].length;	pcommon[partition].Cucond /= pcommon[partition].length;}void SumNAvg_Tube(Tube* ptube, Common* pcommon) {	int i;	ptube[partition].in_temp = 0;	// ¹«ÀÇ¹ÌÇÑ °ªµé.	ptube[partition].out_temp = 0;	ptube[partition].avg_temp = 0;	ptube[partition].index = 0;	ptube[partition].in_enthalpy = 0;	ptube[partition].out_enthalpy = 0;		ptube[partition].conductivity= 0;	//conductivity ºÎÅÍ ½ÃÀÛ.	ptube[partition].viscosity = 0;	ptube[partition].density = 0;	ptube[partition].Cp = 0;	ptube[partition].Pr = 0;	ptube[partition].e_ratio = 0;	ptube[partition].p_ratio = 0;	ptube[partition].angle_ratio = 0;	ptube[partition].velocity = 0;	ptube[partition].Re = 0;	ptube[partition].Nu = 0;	ptube[partition].hi = 0;	ptube[partition].fi = 0;	ptube[partition].DP = 0;		for(i=0; i<partition; i++) {	ptube[partition].conductivity+= pcommon[i].length*ptube[i].conductivity;		ptube[partition].viscosity += pcommon[i].length*ptube[i].viscosity;	ptube[partition].density += pcommon[i].length*ptube[i].density;	ptube[partition].Cp += pcommon[i].length*ptube[i].Cp;	ptube[partition].Pr += pcommon[i].length*ptube[i].Pr;	ptube[partition].e_ratio += pcommon[i].length*ptube[i].e_ratio;	ptube[partition].p_ratio += pcommon[i].length*ptube[i].p_ratio;	ptube[partition].angle_ratio += pcommon[i].length*ptube[i].angle_ratio;	ptube[partition].velocity += pcommon[i].length*ptube[i].velocity;	ptube[partition].Re += pcommon[i].length*ptube[i].Re;	ptube[partition].Nu += pcommon[i].length*ptube[i].Nu;	ptube[partition].hi += pcommon[i].length*ptube[i].hi;	ptube[partition].fi += pcommon[i].length*ptube[i].fi;	ptube[partition].DP += ptube[i].DP;	}		ptube[partition].conductivity/= pcommon[partition].length;		ptube[partition].viscosity /= pcommon[partition].length;	ptube[partition].density /= pcommon[partition].length;	ptube[partition].Cp /= pcommon[partition].length;	ptube[partition].Pr /= pcommon[partition].length;	ptube[partition].e_ratio /= pcommon[partition].length;	ptube[partition].p_ratio /= pcommon[partition].length;	ptube[partition].angle_ratio /= pcommon[partition].length;	ptube[partition].velocity /= pcommon[partition].length;	ptube[partition].Re /= pcommon[partition].length;	ptube[partition].Nu /= pcommon[partition].length;	ptube[partition].hi /= pcommon[partition].length;	ptube[partition].fi /= pcommon[partition].length;}void SumNAvg_Annular(Annular* pannular, Common* pcommon) {	int i;	pannular[partition].in_temp = 0;	// ¹«ÀÇ¹ÌÇÑ °ªµé.	pannular[partition].out_temp = 0;	pannular[partition].avg_temp = 0;	pannular[partition].index = 0;	pannular[partition].in_enthalpy = 0;	pannular[partition].out_enthalpy = 0;		pannular[partition].conductivity= 0;	//conductivity ºÎÅÍ ½ÃÀÛ.	pannular[partition].viscosity = 0;	pannular[partition].density = 0;	pannular[partition].Cp = 0;	pannular[partition].Pr = 0;	pannular[partition].e_ratio = 0;	pannular[partition].p_ratio = 0;	pannular[partition].r_ratio = 0;//	pannular[partition].Dhyd = 0;//	pannular[partition].Aeff = 0;//	pannular[partition].angle_ratio = 0;	pannular[partition].velocity = 0;	pannular[partition].Re = 0;	pannular[partition].Nu = 0;	pannular[partition].ho = 0;	pannular[partition].ef = 0;//	pannular[partition].fo = 0;	pannular[partition].DP = 0;		for(i=0; i<partition; i++) {	pannular[partition].conductivity+= pcommon[i].length*pannular[i].conductivity;		pannular[partition].viscosity += pcommon[i].length*pannular[i].viscosity;	pannular[partition].density += pcommon[i].length*pannular[i].density;	pannular[partition].Cp += pcommon[i].length*pannular[i].Cp;	pannular[partition].Pr += pcommon[i].length*pannular[i].Pr;	pannular[partition].e_ratio += pcommon[i].length*pannular[i].e_ratio;	pannular[partition].p_ratio += pcommon[i].length*pannular[i].p_ratio;	pannular[partition].r_ratio += pcommon[i].length*pannular[i].r_ratio;//	pannular[partition].Dhyd += pcommon[i].length*pannular[i].Dhyd;//	pannular[partition].Aeff += pcommon[i].length*pannular[i].Aeff;//	pannular[partition].angle_ratio += pcommon[i].length*pannular[i].angle_ratio;	pannular[partition].velocity += pcommon[i].length*pannular[i].velocity;	pannular[partition].Re += pcommon[i].length*pannular[i].Re;	pannular[partition].Nu += pcommon[i].length*pannular[i].Nu;	pannular[partition].ho += pcommon[i].length*pannular[i].ho;	pannular[partition].ef += pcommon[i].length*pannular[i].ef;//	pannular[partition].fo += pcommon[i].length*pannular[i].fo;	pannular[partition].DP += pannular[i].DP;	}		pannular[partition].conductivity/= pcommon[partition].length;		pannular[partition].viscosity /= pcommon[partition].length;	pannular[partition].density /= pcommon[partition].length;	pannular[partition].Cp /= pcommon[partition].length;	pannular[partition].Pr /= pcommon[partition].length;	pannular[partition].e_ratio /= pcommon[partition].length;	pannular[partition].p_ratio /= pcommon[partition].length;	pannular[partition].angle_ratio /= pcommon[partition].length;	pannular[partition].r_ratio /= pcommon[partition].length;//	pannular[partition].Dhyd /= pcommon[partition].length;//	pannular[partition].Aeff /= pcommon[partition].length;//	pannular[partition].velocity /= pcommon[partition].length;	pannular[partition].Re /= pcommon[partition].length;	pannular[partition].Nu /= pcommon[partition].length;	pannular[partition].ho /= pcommon[partition].length;	pannular[partition].ef /= pcommon[partition].length;//	pannular[partition].fo /= pcommon[partition].length;}	//<\Evaluate Sum of Avg Values>//<\Fucntion contents>
+#include <stdio.h>
+#include <stdlib.h>
+#include<string.h>
+#define _USE_MATH_DEFINES	// piê°’ ì‚¬ìš©. ë³€ìˆ˜ ì´ë¦„ M_PI
+#include <math.h>
+#include <errno.h>
+#include <direct.h>
+//ì—”íƒˆí”¼ë‚˜ cp ê°’ kjì—ì„œ j ë‹¨ìœ„ë¡œ ë‹¤ ì¹˜í™˜í•  ê²ƒ.
+#define GRID 100 //	ìª¼ê°œë†“ì€ Partitionì„ ê¸°ì¤€ìœ¼ë¡œ ì˜¨ë„ í…Œì´ë¸”ì„ GRID ìˆ˜ë§Œí¼ ë” ìª¼ê°œì„œ í…Œì´ë¸”ë¡œ ê¸°ì….
+//GRID ê°’ì´ 100ë³´ë‹¤ ì‘ì€ ë²”ìœ„ì—ì„œ Hot_in_tempê³¼ Cold_out_tempê°€ ê²¹ì³ì„œ ì—ëŸ¬ë¥¼ ì¼ìœ¼í‚¬ ê°€ëŠ¥ì„±ì´ ìˆë‹¤.
+//CSV íŒŒì¼ë¡œ ì €ì¥í•  ë•Œ geometricì´ë‚˜ ê·¸ëƒ¥ thermal conditionë“¤ì€ ì¼ë‹¨ txtíŒŒì¼ë¡œ ë‹¤ ì˜®ê²¨ë†“ì„ ê²ƒ.
+//ëŒ€ë¶€ë¶„ ë°ì´í„°ë“¤ì„ doubleë¡œ ì²˜ë¦¬í•  ê²ƒ
+//<Database>
+	//<Struction>
+typedef struct _tempdata{ // ProData
+	double temperature;
+	double conductivity;
+	double viscosity;
+	double density;
+	double Cp;
+	double enthalpy;
+}ProData;	//Property_Data
+
+typedef struct _hotside{ // Tube
+	//ì˜¨ë„ ê´€ë ¨ í”„ë¡œí¼í‹°
+	double in_temp;
+	double out_temp;
+	double avg_temp;
+	int index;	// ì˜¨ë„ í…Œì´ë¸”ì— ëŒ€í•œ ì£¼ì†Œê°’.
+	double in_enthalpy;
+	double out_enthalpy;// ì—”íƒˆí”¼ë§Œ ì¸ ì•„ì›ƒì„ êµ¬ë¶„í•˜ê³  ë‚˜ë¨¸ì§€ëŠ” ë‹¤ í‰ê·  ì˜¨ë„ ê¸°ë°˜ìœ¼ë¡œ ê³„ì‚°.
+	double conductivity;
+	double viscosity;
+	double density;
+	double Cp;
+	//ê·¸ ì™¸ í”„ë¡œí¼í‹°
+	double Pr;
+	double e_ratio;
+	double p_ratio;
+	double angle_ratio;
+	double velocity;
+	double Re;
+	double Nu;
+	double hi;
+	double fi;
+	double DP;
+}Tube;
+
+typedef struct _coldside{ //Annular
+	//ì˜¨ë„ ê´€ë ¨ í”„ë¡œí¼í‹°
+	double in_temp;
+	double out_temp;
+	double avg_temp;
+	int index;	// ì˜¨ë„ í…Œì´ë¸”ì— ëŒ€í•œ ì£¼ì†Œê°’.
+	double in_enthalpy;
+	double out_enthalpy;// ì—”íƒˆí”¼ë§Œ ì¸ ì•„ì›ƒì„ êµ¬ë¶„í•˜ê³  ë‚˜ë¨¸ì§€ëŠ” ë‹¤ í‰ê·  ì˜¨ë„ ê¸°ë°˜ìœ¼ë¡œ ê³„ì‚°.
+	double conductivity;
+	double viscosity;
+	double density;
+	double Cp;
+	//ê·¸ ì™¸ í”„ë¡œí¼í‹°
+	double Pr;
+	double e_ratio;
+	double p_ratio;
+	double angle_ratio;
+	double r_ratio;
+	double Dhyd;
+	double Aeff;
+	double velocity;
+	double Re;
+	double Nu;
+	double ho;
+	double ef;
+	double fo;
+	double DP;
+}Annular;
+
+typedef struct _common{ //common
+	double HX;
+	double length;
+	double height;
+	double volume;
+	double DTln;	//LMTD
+	double UA;
+	double Ui;
+	double Ai;
+	double Uo;
+	double Ao;
+	double Cucond;
+}Common;
+	//<\Struction>
+	//<Parameters>
+double T_cond[10] = { 0.5475, 0.00205, -5.55E-06, 4.55E-08, -5.90E-09, 1.56E-10, -2.26E-12, 2.00E-14, -1.00E-16, 2.18E-19 }; // 1st
+double Viscosity[10] = { 0.00179, -6.23E-05, 1.70E-06, -3.96E-08, 7.63E-10, -1.14E-11, 1.22E-13, -8.75E-16, 3.69E-18, -6.91E-21 }; // 2nd
+double Density[10] = { 999.8292, 0.10526, -0.01371, 3.46E-04, -8.30E-06, 1.28E-07, -1.12E-09, 4.44E-12, 1.17E-15, -4.43E-17 }; // 3rd
+double Cp[10] = { 4.22837, -0.0083, 6.28E-04, -2.61E-05, 6.74E-07, -1.15E-08, 1.33E-10, -9.98E-13, 4.35E-15, -8.35E-18 }; // 4th
+double Enthalpy[10] = { 0.06374, 4.22664, -0.00381, 1.75E-04, -4.63E-06, 7.13E-08, -6.16E-10, 2.49E-12, -3.65E-16, -2.04E-17 }; // 5th
+ProData copper[7];	// ì˜¨ë„-ì—´ì „ë‹¬ê³„ìˆ˜ë§Œ í‘œê¸°. ë‚˜ë¨¸ì§€ ì¸ìŠ¤í„´ìŠ¤ë“¤ì€ ê±´ë“¤ì§€ ë§ ê²ƒ.
+	//<\parameters>
+	//<Geometric conditions>
+//ì–˜ë„¤ë“¤ ê°’ë„ ë”°ë¡œ ì €ì¥í•˜ëŠ” í…Œì´ë¸”ì„ ë§Œë“¤ì–´ì„œ ì €ì¥í•´ì„œ ë¶ˆëŸ¬ì˜¤ëŠ” ë°©ì‹ë„ ìƒê°í•´ë³´ì.
+double Dbi;	//g
+double Deo;	//g
+double tw = 5.0E-04;  //constant 
+int Ns;	//g
+double Pitch;	//g
+double Dcan = 0.2;	// constant
+double R = 0.6;	//constant
+double FB;
+double Dvi;
+double Dvo;
+double Doi;
+double angle;
+double e;
+double mh = 2;
+double mc = 1.5;
+	//<\Geometric conditions>
+	//<Thermal conditions>
+double Hot_in_temp;
+double Hot_out_temp;
+double Cold_in_temp;
+double Cold_out_temp;
+int partition;	// n, ëª‡ ë²ˆì„ ë‚˜ëˆŒ ê²ƒì¸ê°€??
+double DTh;	// íŒŒí‹°ì…˜ ë‚˜ëˆˆ ê°¯ìˆ˜ì— ë”°ë¼ íŠœë¸Œì˜ ì˜¨ë„ ì¼ì •í•œ ê°„ê²©ì„ ë‹´ì€ ê°’
+//double Hot_avg_temp = 57.5;
+//double Cold_avg_temp;
+	//<\Thermal conditions>
+	//<Parametric Analysis Conditions>
+double min_factor, max_factor, unit = 0.01;
+int min_Ns, max_Ns;
+double Dbi_ini, Deo_ini, Doi_ini, Pitch_ini;	// ì¶”í›„ì— ìœ„ ë³€ìˆ˜ë“¤ì€ ë³€ê²½ë  ê°’ë“¤ì´ë¼ ì´ˆê¸°ê°’ë“¤ì„ ë‹´ì•„ì£¼ëŠ” ë³€ìˆ˜ë“¤.
+int Ns_ini; 
+int size; // parametric analysisë¥¼ ìœ„í•œ í¬ê¸° ì €ì¥ê°’.
+	//<\Parametric Analysis Conditions>
+//<\Database>
+/////////////////////////////////////////////////////////////////////////////////////
+//<Functions>
+	//<Calculator/ShowData/FPrintf Functions>
+void write_given_geodata(int option);	//ì£¼ì–´ì§€ëŠ” ê°’ë“¤ì„ ë°›ì•„ì„œ ì „ì—­ë³€ìˆ˜ì— ì €ì¥ì‹œí‚¨ë‹¤. í•´ë‹¹ ê°’ë“¤ì€ Geometric ê°’ë“¤, termperature ê°’ë“¤. ë”°ë¡œ ì²´í¬í•˜ëŠ” ê³³ì´ í•„ìš”í•˜ë‹¤.
+void Print_given_geodata(void); // í˜•ìƒ ë°ì´í„° í™•ì¸ìš© ì¶œë ¥
+void write_given_tempdata(int option);
+void Print_given_tempdata(void);
+void write_given_parametric_factor(int option); 	// Parametric Analysisì— ì“°ì¼ ë³€ìˆ˜ ëŒ€ì…í•˜ëŠ” í•¨ìˆ˜.
+void Print_given_parametric_factor(int size);
+void Initialize_Geoconditions(void);	// Parametric Analysisì— ì“°ì¼ Geoconditionsì„ ì´ˆê¸°í™”.
+void create_property_csv(ProData* prodata, int add); // ì•„ë˜ í”„ë¡œí¼í‹° ê³„ì‚°ê¸°ë¥¼ í†µí•´ êµ¬ì¡°ì²´ ë°°ì—´ì— ì €ì¥ê³¼ ë™ì‹œì—, í”„ë¡œí¼í‹° csvíŒŒì¼ì„ ì‘ì„±í•œë‹¤. 
+void property_calculator(ProData* prodata, int add, double temp, double gap);	// ì˜¨ë„ì— ë”°ë¥¸ í”„ë¡œí¼í‹° ê°’ë“¤ì„ ê³„ì‚°í•œë‹¤.
+void Calculate_HX_partly(ProData* prodata, Tube* ptube, Annular* pannular, Common* pcommon); //â˜…â˜…â˜…ì´ë²ˆ ê³„ì‚°ê¸°ì˜ ì´ ì§‘í•©ì²´â˜…â˜…â˜…
+void create_counterflow_csv(char* filename, Tube* ptube, Annular* pannular, Common* pcommon);	// CSV íŒŒì¼ë¡œ ì¶œë ¥
+	//<\Calculator/ShowData/FPrintf Functions>
+	//<Simple calculated data : common>
+void calculate_FB(void);	// ì „ì—­ë³€ìˆ˜ëŠ” ë”°ë¡œ ì…ë ¥ê°’ìœ¼ë¡œ ì“°ì§€ ì•Šì•„ë„ ëœë‹¤.
+void calculate_Dvi(void);
+void calculate_Dvo(void);
+void calculate_Doi(void);
+void calcuate_angle(void);
+void calculate_e(void);
+void calculate_DTh(void);
+void initialize_copper(void);
+void calculate_Coldtemps(ProData* prodata, Tube* ptube, Annular* pannular, int index);
+	//<\Simple calculated data : common>
+	//<Simple calculated data : tube>	ë°˜í™˜ê°’ ì „ë¶€ë‹¤ doubleë¡œ
+double cal_tube_Pr(double Cp, double viscosity, double conductivity);	//  ëª¨ë‘ ë³€ìˆ˜ í•„ìš”.
+double cal_tube_e_ratio(void); // only ì „ì—­ë³€ìˆ˜
+double cal_tube_p_ratio(void);// only ì „ì—­ë³€ìˆ˜
+double cal_tube_angle_ratio(void);// only ì „ì—­ë³€ìˆ˜
+double cal_tube_velocity(double density);
+double cal_tube_Re(double velocity, double density, double viscosity);
+double cal_tube_Nu(double Re, double e_ratio, double p_ratio, double angle_ratio, double Pr);
+double cal_tube_fi(double Re, double e_ratio, double p_ratio, double angle_ratio);
+double cal_tube_hi(double Nu, double conductivity);	//â˜…ê°€ì¥ ë§ˆì§€ë§‰ì— êµ¬í•  ê²ƒ.
+double cal_tube_DP(double fi, double length, double density, double velocity);	//â˜…ê°€ì¥ ë§ˆì§€ë§‰ì— êµ¬í•  ê²ƒ.
+	//<\Simple calculated data : tube>
+	//<Simple calculated data : annular>
+double cal_annular_Pr(double Cp, double viscosity, double conductivity);
+double cal_annular_e_ratio(void); // only ì „ì—­ë³€ìˆ˜
+double cal_annular_p_ratio(void); // only ì „ì—­ë³€ìˆ˜
+double cal_annular_angle_ratio(void); // only ì „ì—­ë³€ìˆ˜
+double cal_annular_r_ratio(void); // only ì „ì—­ë³€ìˆ˜
+double cal_annular_Dhyd(void); // only ì „ì—­ë³€ìˆ˜
+double cal_annular_Aeff(void); // only ì „ì—­ë³€ìˆ˜
+double cal_annular_velocity(double density, double Aeff);
+double cal_annular_Re(double velocity, double density, double Dhyd, double viscosity);
+double cal_annular_ef(double Re, double e_ratio, double p_ratio, double angle_ratio, double r_ratio);
+double cal_annular_fo(double Re, double r_ratio, double ef);
+double cal_annular_Nu(double fo, double Re, double Pr, double e_ratio, double p_ratio, double r_ratio);
+double cal_annular_ho(double Nu, double conductivity, double Dhyd);
+double cal_annular_DP(double fo, double length, double Dhyd, double density, double velocity);
+	//<\Simple calculated data : annular>
+	//<Simple calculated data : objects>
+double cal_common_DTln(double hot_in, double hot_out, double cold_in, double cold_out);
+double cal_common_Cucond(double hot_avg, double cold_avg); // ë‘ ì˜¨ë„ì˜ í‰ê·  ì˜¨ë„ì—ì„œ conductivityë¥¼ êµ¬í•œë‹¤. í° ì˜ë¯¸ ì—†ìŒ.
+double cal_common_UA(double DTln, double HX);
+double cal_common_length(double hi, double ho, double Cucond, double UA);
+double cal_common_height(double length);
+double cal_common_volume(double height);
+double cal_common_Ai(double length);
+double cal_common_Ui(double UA, double Ai);
+double cal_common_Ao(double length);
+double cal_common_Uo(double UA, double Ao);
+	//<\Simple calculated data : objects>
+	//<Evaluate Sum of Avg Values>
+void SumNAvg_Common(Common* pcommon);
+void SumNAvg_Tube(Tube* ptube, Common* pcommon);
+void SumNAvg_Annular(Annular* pannular, Common* pcommon);
+	//<\Evaluate Sum of Avg Values>
+//<\Functions>
+/////////////////////////////////////////////////////////////////////////////////////
+//##################################################
+int main(void) {
+	int loop;
+	char input;
+	char filename[20] = "initial.csv";
+	//í´ë” ìƒì„± ë° ì‘ì—… ë””ë ‰í† ë¦¬ ì„¤ì •
+	char strFolderPath[100] = {"C:\\Temp\\HX_counterflow"};
+	int nResult = mkdir(strFolderPath);
+	
+	if( nResult == 0 ) {
+		printf("í´ë” ìƒì„± ì„±ê³µ. í´ë” ì €ì¥ëœ ë””ë ‰í† ë¦¬: %s\n", strFolderPath);
+	}
+	else if(nResult == -1) {
+		perror("í´ë” ìƒì„± ì‹¤íŒ¨ - í´ë”ê°€ ì´ë¯¸ ìˆê±°ë‚˜ ë¶€ì •í™•í•¨");
+		printf("Error massager : %d\n", errno);
+	}
+	
+	nResult = chdir(strFolderPath);
+	if(nResult == 0) {
+		printf("ì´ë™ ì„±ê³µ. í˜„ì¬ ì‘ì—… ë””ë ‰í† ë¦¬ : %s\n", strFolderPath);
+	}
+	else if(nResult == -1) {
+		perror("ì´ë™ ì‹¤íŒ¨. í˜„ì¬ ì‹¤í–‰ ì¤‘ì¸ exeì™€ ê°™ì€ ë””ë ‰í† ë¦¬ì— íŒŒì¼ì´ ì €ì¥ì´ ë©ë‹ˆë‹¤.");
+		printf("Error massager : %d\n", errno);
+	}
+	
+	//....í´ë” ìƒì„± ë° ì‘ì—… ë””ë ‰í† ë¦¬ ì„¤ì •
+	
+	printf("======================================\n");
+	printf("======Counter Flow HX Calculator======\n");
+	printf("Process : Geometric boundary condition...\n");
+	initialize_copper();
+	for(loop = 0;loop<4;loop++){ //optionì´ 0~3
+		write_given_geodata(loop);
+	}
+	while(1) {
+		calculate_FB();	// ì „ì—­ë³€ìˆ˜ëŠ” ë”°ë¡œ ì…ë ¥ê°’ìœ¼ë¡œ ì“°ì§€ ì•Šì•„ë„ ëœë‹¤.
+		calculate_Dvi();
+		calculate_Dvo();
+		calculate_Doi();
+		calcuate_angle();
+		calculate_e();
+		
+		Print_given_geodata();
+		printf("Dbi<Deo<Doi ì´ê³  Nsê°€ ì •ìˆ˜ì¸ì§€ ë“±ë“± ë°˜ë“œì‹œ í™•ì¸ì„ í•´ì£¼ì‹œê¸° ë°”ëë‹ˆë‹¤.\n");
+		printf("Dbi ìˆ˜ì •í•˜ë ¤ë©´ 0, DeoëŠ” 1, NsëŠ” 2, PitchëŠ” 3ì„ ì…ë ¥í•˜ì„¸ìš”.\n");
+		printf("ê·¸ëƒ¥ ë„˜ì–´ê°€ë ¤ë©´ 0~3ì„ ì œì™¸í•œ ì•„ë¬´ ê°’ì„ ì…ë ¥í•˜ì„¸ìš”.\n");
+		getchar();
+		scanf("%c", &input);
+		if('0' <= input && input <= '3'){
+			loop = atoi(&input);	//ì—‰ì„±í•œ ë¶€ë¶„
+			write_given_geodata(loop);
+		}
+		else
+			break;
+	}
+	printf("Process Complete: Geometric boundary condition!\n\n");
+	
+	printf("Process : Thermal boundary condition...\n");
+	for(loop=0;loop<4;loop++) { // optionì´ 0~3
+		write_given_tempdata(loop);
+	} 
+	
+	while(1) {
+		calculate_DTh();
+		Print_given_tempdata();
+		printf("ì˜¬ë°”ë¥´ê²Œ ì…ë ¥í–ˆëŠ”ì§€ í™•ì¸ì„ í•´ì£¼ì‹œê¸° ë°”ëë‹ˆë‹¤.\n");
+		printf("H_i_Tì„ ìˆ˜ì •í•˜ë ¤ë©´ 0, H_o_TëŠ” 1, C_i_TëŠ” 2, êµ¬ê°„ê°¯ìˆ˜ëŠ” 3ì„ ì…ë ¥í•˜ì„¸ìš”\n");
+		printf("ê·¸ëƒ¥ ë„˜ì–´ê°€ì‹œë ¤ë©´ 0~3ì„ ì œì™¸í•œ ì•„ë¬´ ê°’ì„ ì…ë ¥í•˜ì„¸ìš”.\n");
+		getchar();
+		scanf("%c", &input);
+		if('0' <= input && input <= '3'){
+			loop = atoi(&input);
+			write_given_tempdata(loop);
+		}
+		else
+			break;
+	}
+	printf("Process Complete : Thermal boundary condition!\n\n");
+	
+	printf("Process : Creating Data Table...\n");
+	
+	int add = 0; // Table ì‘ì„±ì„ ìœ„í•´ ì¶”ê°€ ì¸ë±ìŠ¤ ì–‘ ê³„ì‚°.
+	double gap = DTh/GRID; 	//(Hot_in_temp-Hot_out_temp)/(GRID*partition);	// table ìª¼ê°œëŠ” ì˜¨ë„ ë‹¨ìœ„. ì–˜ëŠ” ì´ˆê¸°ì— ì„¤ì • í•¨ìˆ˜ë¡œ ì˜®ê¸°ì.
+	double temp = Hot_out_temp;
+	while(temp > Cold_in_temp) {
+		temp -= gap;
+		add++;
+	}
+	
+	ProData prodata_table[GRID*partition+add+1];	// partition ë‚˜ëˆˆ ë§Œí¼ hot avg ê°’ì„ ì •í™•í•˜ê²Œ í•˜ê¸° ìœ„í•´ ë°˜ìœ¼ë¡œ ìª¼ê° ë‹¤.
+	Tube tube_table[partition+1];
+	Annular annular_table[partition+1];
+	Common common_table[partition+1];
+	
+	printf("Process Complete: Creating Data Table!\n\n");
+	
+	printf("Process : Property of Water with Temperature\n");
+	property_calculator(prodata_table, add, temp, gap);
+	create_property_csv(prodata_table, add);
+	printf("Process Complete : Property of Water with Temperature!\n\n");
+	
+	printf("======================================\n");
+	printf("Main Process Calculating...\n");
+	Calculate_HX_partly(prodata_table, tube_table, annular_table, common_table);
+	SumNAvg_Common(common_table);
+	SumNAvg_Tube(tube_table, common_table);
+	SumNAvg_Annular(annular_table, common_table);
+	create_counterflow_csv(filename, tube_table, annular_table, common_table);
+	printf("\nMain Process Finish!!\n");
+	printf("======================================\n\n");
+	printf("\n");
+	
+	
+	printf("======================================\n");
+	printf("Process : Parametric Analysis\n");
+	for(loop = 0; loop< 4; loop++) {
+		write_given_parametric_factor(loop);
+	}
+	while(1) {
+		size= (max_factor-min_factor)*100+1;
+		Print_given_parametric_factor(size);
+		printf("min_factor, max_factorëŠ” ë°˜ë“œì‹œ ì†Œìˆ˜ ë‘˜ì§¸ ìë¦¬ê¹Œì§€ë§Œ í—ˆìš©ë©ë‹ˆë‹¤. ê·¸ ì•„ë˜ ìë¦¿ìˆ˜ë¶€í„°ëŠ” ì˜¤ë¥˜ê°€ ë°œìƒí•©ë‹ˆë‹¤.\n");
+		printf("min_factorë¥¼ ìˆ˜ì •í•˜ë ¤ë©´ 0, max_factorëŠ” 1, min_NsëŠ” 2, max_NsëŠ” 3ì„ ì…ë ¥í•˜ì„¸ìš”.\n");
+		printf("ê·¸ëƒ¥ ë„˜ì–´ê°€ì‹œë ¤ë©´ 0~3ì„ ì œì™¸í•œ ì•„ë¬´ ê°’ì´ë‚˜ ì…ë ¥í•˜ì„¸ìš”.\n");
+		getchar();
+		scanf("%c", &input);
+		if('0' <= input &&input <= '3') {
+			loop = atoi(&input);
+			write_given_parametric_factor(loop);
+		}
+		else
+			break;
+	}
+	// ê³¼ì •ì„ ê³„ì† ë°˜ë³µí•˜ê¸° ìœ„í•´ì„œëŠ” ì´ˆê¸°ê°’ë“¤ì„ ì €ì¥í•´ë†“ì•„ì•¼ í•œë‹¤. 
+	Dbi_ini = Dbi;
+	Deo_ini = Deo;
+	Doi_ini = Doi;
+	Pitch_ini = Pitch;
+	Ns_ini = Ns;
+	//ì´ ì´í›„ì— Dbi Deo Doi Ns Pitchì˜ factor ì¡°ì •í•˜ëŠ” ê³¼ì •ì„ ë§Œë“¤ì–´ ìœ„ ê³¼ì •ì„ ë‹¤ì‹œ ë°˜ë³µí•˜ê²Œ ë§Œë“¤ì–´ì•¼ í•œë‹¤.
+	// ì €ì¥í•  ë°ì´í„°ë“¤ í˜¸ì¶œ
+	Tube Tube_Modified_Dbi[size+1];
+	Tube Tube_Modified_Deo[size+1];
+	Tube Tube_Modified_Doi[size+1];
+	Tube Tube_Modified_Pitch[size+1];
+	Tube Tube_Modified_Ns[max_Ns-min_Ns+1];
+	
+	Annular Annular_Modified_Dbi[size+1];
+	Annular Annular_Modified_Deo[size+1];
+	Annular Annular_Modified_Doi[size+1];
+	Annular Annular_Modified_Pitch[size+1];
+	Annular Annular_Modified_Ns[max_Ns-min_Ns+1];	
+	
+	Common Common_Modified_Dbi[size+1];
+	Common Common_Modified_Deo[size+1];
+	Common Common_Modified_Doi[size+1];
+	Common Common_Modified_Pitch[size+1];
+	Common Common_Modified_Ns[max_Ns-min_Ns+1];
+	
+	char filename1[20] = "Modify_Dbi.csv";
+	for(loop = 0;loop<size+1;loop++) {	// Dbi
+		// ë§¤ë²ˆ geometric condition ê°±ì‹ 
+		Dbi = (min_factor+0.01*loop)*Dbi_ini;
+		calculate_FB();
+		calculate_Dvi();
+		calculate_Dvo();
+		calculate_Doi();
+		calcuate_angle();
+		calculate_e();
+		
+		if(Dbi +2*tw< Deo) {	//ì´ ì¡°ê±´ì´ ì¶©ì¡±ë˜ì§€ ì•Šìœ¼ë©´ í•´ë‹¹ ë°ì´í„°ëŠ” ëª¨ë‘ 0ìœ¼ë¡œ ì²˜ë¦¬ëœë‹¤.
+			Calculate_HX_partly(prodata_table, tube_table, annular_table, common_table);
+			SumNAvg_Common(common_table);
+			SumNAvg_Tube(tube_table, common_table);
+			SumNAvg_Annular(annular_table, common_table);
+			
+			Tube_Modified_Dbi[loop] = tube_table[partition];
+			Annular_Modified_Dbi[loop] = annular_table[partition];
+			Common_Modified_Dbi[loop] = common_table[partition];
+		}
+	}
+	Initialize_Geoconditions();
+	//filename ë•Œë¬¸ì— ë¬¸ì„œ ì‘ì„±í•  í•¨ìˆ˜ë¥¼ í˜¸ì¶œí•´ì•¼í•¨.
+	create_counterflow_csv(filename1, Tube_Modified_Dbi, Annular_Modified_Dbi, Common_Modified_Dbi);
+	
+	char filename2[20] = "Modify_Deo.csv";
+	for(loop = 0;loop<size+1;loop++) { // Deo
+		Deo= (min_factor+0.01*loop)*Deo_ini;
+		calculate_FB();
+		calculate_Dvi();
+		calculate_Dvo();
+		//calculate_Doi(); ì¼ë‹¨ ì„¤ì •ì„ êº¼ë†“ì.
+		calcuate_angle();
+		calculate_e();
+		
+		if(Dbi+2*tw < Deo && Deo <= Doi) {
+			Calculate_HX_partly(prodata_table, tube_table, annular_table, common_table);
+			SumNAvg_Common(common_table);
+			SumNAvg_Tube(tube_table, common_table);
+			SumNAvg_Annular(annular_table, common_table);
+			
+			Tube_Modified_Deo[loop] = tube_table[partition];
+			Annular_Modified_Deo[loop] = annular_table[partition];
+			Common_Modified_Deo[loop] = common_table[partition];
+		}
+	}
+	Initialize_Geoconditions();	
+	//filename ë•Œë¬¸ì— ë¬¸ì„œ ì‘ì„±í•  í•¨ìˆ˜ë¥¼ í˜¸ì¶œí•´ì•¼í•¨.
+	create_counterflow_csv(filename2, Tube_Modified_Deo, Annular_Modified_Deo, Common_Modified_Deo);
+	
+	char filename3[20] = "Modify_Doi.csv";
+	for(loop = 0;loop<size+1;loop++) {	//Doi
+		Doi = (min_factor+0.01*loop)*Doi_ini;
+		calculate_FB();
+		calculate_Dvi();
+		calculate_Dvo();
+		calcuate_angle();
+		calculate_e();
+		
+		if(Deo <= Doi) {
+			Calculate_HX_partly(prodata_table, tube_table, annular_table, common_table);
+			SumNAvg_Common(common_table);
+			SumNAvg_Tube(tube_table, common_table);
+			SumNAvg_Annular(annular_table, common_table);
+			
+			Tube_Modified_Doi[loop] = tube_table[partition];
+			Annular_Modified_Doi[loop] = annular_table[partition];
+			Common_Modified_Doi[loop] = common_table[partition];
+		}
+	}
+	Initialize_Geoconditions();
+	//filename ë•Œë¬¸ì— ë¬¸ì„œ ì‘ì„±í•  í•¨ìˆ˜ë¥¼ í˜¸ì¶œí•´ì•¼í•¨.
+	create_counterflow_csv(filename3, Tube_Modified_Doi, Annular_Modified_Doi, Common_Modified_Doi);
+	
+	char filename4[20] = "Modify_Pitch.csv";
+	for(loop = 0;loop<size+1;loop++) { // Pitch
+		Pitch = (min_factor+0.01*loop)*Pitch_ini;
+		calculate_FB();
+		calculate_Dvi();
+		calculate_Dvo();
+		calculate_Doi();
+		calcuate_angle();
+		calculate_e();
+		
+		Calculate_HX_partly(prodata_table, tube_table, annular_table, common_table);
+		SumNAvg_Common(common_table);
+		SumNAvg_Tube(tube_table, common_table);
+		SumNAvg_Annular(annular_table, common_table);
+		
+		Tube_Modified_Pitch[loop] = tube_table[partition];
+		Annular_Modified_Pitch[loop] = annular_table[partition];
+		Common_Modified_Pitch[loop] = common_table[partition];
+	}
+	Initialize_Geoconditions();
+	//filename ë•Œë¬¸ì— ë¬¸ì„œ ì‘ì„±í•  í•¨ìˆ˜ë¥¼ í˜¸ì¶œí•´ì•¼í•¨.
+	create_counterflow_csv(filename4, Tube_Modified_Pitch, Annular_Modified_Pitch, Common_Modified_Pitch);
+	
+	char filename5[20] = "Modify_Ns.csv";
+	for(loop = min_Ns; loop < max_Ns+1;loop++) { // Ns
+		Ns = loop;
+		
+		calculate_FB();
+		calculate_Dvi();
+		calculate_Dvo();
+		calculate_Doi();
+		calcuate_angle();
+		calculate_e();
+		/*printf("\n ì¤‘ê°„ ì ê²€\n");
+		printf("Ns : %dì¼ ë•Œ,", Ns);
+		Print_given_geodata();
+		system("pause");*/
+		
+		Calculate_HX_partly(prodata_table, tube_table, annular_table, common_table);
+		SumNAvg_Common(common_table);
+		SumNAvg_Tube(tube_table, common_table);
+		SumNAvg_Annular(annular_table, common_table);
+		
+		Tube_Modified_Ns[loop-1] = tube_table[partition];
+		Annular_Modified_Ns[loop-1] = annular_table[partition];
+		Common_Modified_Ns[loop-1] = common_table[partition];
+	}
+	Initialize_Geoconditions();
+	//ê·¸ëŸ¼ ì´ íŒŒì¼ì—ëŠ” ìµœì†Œí•œ Filenameì„ ìƒì„±í•˜ëŠ” ë³€ìˆ˜ê°€ í•„ìš”í•˜ë‹¤.
+	create_counterflow_csv(filename5, Tube_Modified_Ns, Annular_Modified_Ns, Common_Modified_Ns);
+	printf("\nProcess Complete: Parametric Analysis\n");
+	printf("ìœ ì˜ì‚¬í•­\n");
+	printf("QNANEê°’ì´ ëœ¨ë©´ DTlnì„ êµ¬í•  ë•Œ, log(0)ì´ ë˜ì§€ ì•Šì•˜ëŠ”ì§€ í™•ì¸í•´ì£¼ì„¸ìš”.\n");
+	printf("Modified_...csv íŒŒì¼ë“¤ì€ 0ë§Œ ì…ë ¥ë˜ì–´ìˆëŠ” ì¤„ì´ ìˆìŠµë‹ˆë‹¤. ê·¸ ì¤„ì€ geometric conditionê³¼ ì¶©ëŒí•˜ì—¬ ê³„ì‚°ì„ í•˜ì§€ ì•Šì€ ì˜ì—­ì…ë‹ˆë‹¤.\n");
+	system("pause");
+	return 0;
+}
+//########################################################
+///////////////////////////////////////////////////////////////////////////////////////////////
+//<Function contents> 
+	//<Thermal and Geometric given data>
+void write_given_geodata(int option) {
+	int i = option;
+	switch(i) {
+		case 0:
+		while(1) {
+			printf("Dbi ê°’ì„ ì…ë ¥í•´ì£¼ì‹­ì‹œì˜¤[m]. (ex. 15 mm => 1.5E-02) : ");
+			scanf("%lf", &Dbi);
+			if(Dbi < 0) {
+				printf("Error : ì ì ˆí•˜ì§€ ëª»í•œ Dbiê°’ì…ë‹ˆë‹¤!!\n");
+			}
+			else
+				break;
+		}	
+			return;
+		case 1:
+			while(1) {
+				printf("Deo ê°’ì„ ì…ë ¥í•´ì£¼ì‹­ì‹œì˜¤[m]. (ex. 25 mm => 2.5E-02) : ");
+				scanf("%lf", &Deo);
+				if(Deo < Dbi) {
+					printf("Error : Deoê°€ Dbië³´ë‹¤ ì‘ìœ¼ë©´ ì•ˆë©ë‹ˆë‹¤!!\n");
+					printf("Dbi : %lf[m], Deo : %lf[m]\n", Dbi, Deo);
+				}
+				else
+					break;
+			}			
+			return;
+		case 2:
+			while(1) {
+				printf("Ns ê°’ì„ ì…ë ¥í•´ì£¼ì‹­ì‹œì˜¤[int]. (ex. 4) : ");
+				scanf("%d", &Ns);			
+				if(Ns < 1) {
+					printf("ì ì ˆì¹˜ ëª»í•œ Ns ê°’ì…ë‹ˆë‹¤!!\n");
+				}
+				else 
+					break;
+			}
+			return;
+		case 3:
+			while(1) {
+				printf("Pitch ê°’ì„ ì…ë ¥í•´ì£¼ì‹­ì‹œì˜¤[m]. (ex. 50/m =>2.0E-02) : ");
+				scanf("%lf", &Pitch);			
+				if(Pitch < 0) {
+					printf("Error : ì ì ˆí•˜ì§€ ëª»í•œ í”¼ì¹˜ê±°ë¦¬ì…ë‹ˆë‹¤!!\n");
+				}
+				else
+					break;
+			}
+			return;
+	}
+}
+
+void Print_given_geodata(void) {
+	printf("----------------------------------------------\n");
+	printf("Geometric given data ìµœì¢… í™•ì¸ ì‘ì—…ì…ë‹ˆë‹¤.\n");
+	printf("Dbi:%lf m\n", Dbi);
+	printf("Deo:%lf m\n", Deo);
+	printf("Ns:%d \n", Ns);
+	printf("Pitch:%lf m\n", Pitch);
+	printf("FB:%lf\n", FB);
+	printf("Dvi:%lf\n", Dvi);
+	printf("Dvo:%lf\n", Dvo);
+	printf("Doi:%lf\n", Doi);
+	printf("angle:%lf\n", angle);
+	printf("e:%lf\n", e);
+	printf("----------------------------------------------\n");
+}
+
+void write_given_tempdata(int option) {
+	int i = option;
+	switch(i) {
+		case 0:	// hot in
+			printf("Hot_in_tempì„ ì…ë ¥í•´ì£¼ì„¸ìš”[C] (ex. 70) : ");
+			scanf("%lf", &Hot_in_temp);	// ìˆ˜ê°€ ì•„ë‹Œ ë¬¸ìë¥¼ ë°›ì•˜ì„ ë•Œ ì˜ˆì™¸ì²˜ë¦¬í•˜ëŠ” ë°©ë²•ì„ ì°¾ì•„ë³´ì.
+			return;
+		case 1:		// hot out
+			printf("Hot_out_tempì„ ì…ë ¥í•´ì£¼ì„¸ìš”[C] (ex. 45) : ");
+			scanf("%lf", &Hot_out_temp);
+			return;
+		case 2:	// cold in
+			while(1) {
+				printf("Cold_in_tempì„ ì…ë ¥í•´ì£¼ì„¸ìš”[C] (ex.35) : ");
+				scanf("%lf", &Cold_in_temp);			
+				if(Cold_in_temp >= Hot_out_temp) {
+					printf("ì ì ˆí•˜ì§€ ëª»í•œ Cold in temperature ê°’ì…ë‹ˆë‹¤.\n");
+					printf("Cold_in_temp : %lf[C], Hot_out_temp : %lf[C]\n", Cold_in_temp, Hot_out_temp);
+				}
+				else
+					break;
+			}
+			return;
+		case 3:	// partition
+			while(1) {
+				printf("LMTD Methodë¥¼ ì“¸ ë•Œ ëª‡ ê°œì˜ êµ¬ê°„ìœ¼ë¡œ ë‚˜ëˆ„ê² ìŠµë‹ˆê¹Œ[int]? (ìµœì†Œ 20ì´ìƒ) : ");
+				scanf("%d", &partition);
+				if(partition < 20 ) {
+					printf("ìˆ«ìê°€ ë„ˆë¬´ ì‘ìŠµë‹ˆë‹¤.\n");
+				}
+				else if(partition*GRID > 100000) {
+					printf("ìˆ«ìê°€ ë„ˆë¬´ í½ë‹ˆë‹¤. êµ¬ê°„ ê°¯ìˆ˜ê°€ %.0lfì„ ë„˜ì§€ ì•Šë„ë¡ ì£¼ì˜í•´ì£¼ì„¸ìš”.\n", (double)100000/GRID);
+				}
+				else
+					break;
+			}
+			return;
+	}
+}
+
+void Print_given_tempdata(void) {
+	printf("Thermal given data ìµœì¢… í™•ì¸ ê³¼ì •ì…ë‹ˆë‹¤.\n");
+	printf("----------------------------------------------\n");
+	printf("Hot_in_temp : %lf\n", Hot_in_temp);
+	printf("Hot_out_temp:%lf\n", Hot_out_temp);
+	printf("Cold_in_temp:%lf\n", Cold_in_temp);
+	printf("nê°œì˜ êµ¬ê°„:%d\n",partition);
+	printf("DTh :%lf\n", DTh);
+	printf("----------------------------------------------\n");
+	
+}
+void write_given_parametric_factor(int option) {
+	int i = option;
+	switch(i) {
+		case 0 :
+			while(1) {
+				printf("Dbi, Deo, Doi, Pitchì— ëŒ€í•œ min factorë¥¼ ê¸°ì…í•˜ì„¸ìš” (ex. 0.8) : ");
+				scanf("%lf", &min_factor);
+				if(min_factor < 0 || min_factor > 1) {
+					printf("Error : min_factor ë²”ìœ„ëŠ” 0ì—ì„œ 1ê¹Œì§€ ì…ë‹ˆë‹¤.\n");
+				}
+				else
+					break;
+			}
+				return;
+		case 1 :
+			while(1) {
+				printf("Dbi, Deo, Doi, Pitchì— ëŒ€í•œ max factorë¥¼ ê¸°ì…í•˜ì„¸ìš” (ex. 1.2) : ");
+				scanf("%lf", &max_factor);
+				if(max_factor-min_factor<0.01 || max_factor > 3.3) {
+					printf("Error : max_factorëŠ” %1.2lfì—ì„œ 3.3ê¹Œì§€ì…ë‹ˆë‹¤.\n", min_factor+0.01);
+				}
+				else 
+					break;
+			}
+				return;
+		case 2 :
+			while(1) {
+				printf("Nsì˜ ìµœì†Ÿê°’ì„ ì…ë ¥í•´ì£¼ì„¸ìš” (ex. 1) : ");
+				scanf("%d", &min_Ns);
+				if(min_Ns < 1) {
+					printf("Error : min_NsëŠ” ì ì–´ë„ 1ì´ìƒì˜ ìì—°ìˆ˜ì—¬ì•¼ë§Œ í•©ë‹ˆë‹¤.\n");
+				}
+				else 
+					break;
+			}
+				return;
+		case 3 :
+			while(1) {
+				printf("Nsì˜ ìµœëŒ“ê°’ì„ ì…ë ¥í•´ì£¼ì„¸ìš”(ex. 8) : ");
+				scanf("%d", &max_Ns);
+				if(max_Ns <= min_Ns) {
+					printf("Error : max_NsëŠ” min_Ns(: %d)ë³´ë‹¤ ì»¤ì•¼í•©ë‹ˆë‹¤.\n", min_Ns);
+				}
+				else
+					break;
+			}
+				return;
+	}
+}
+
+void Print_given_parametric_factor(int size) {
+	printf("Parametric Analysis ë“¤ì–´ê°€ê¸° ì „ factor ìµœì¢…í™•ì¸ ê³¼ì •ì…ë‹ˆë‹¤.\n");
+	printf("----------------------------------------------\n");
+	printf("Dbi, Deo, Doi, Pitchì˜ min_factor ê°’ : %1.2lf\n", min_factor);
+	printf("Dbi, Deo, Doi, Pitchì˜ max_factor ê°’ : %1.2lf\n", max_factor);
+	printf("Ns ìµœì†Ÿê°’ : %d\n", min_Ns);
+	printf("Ns ìµœëŒ“ê°’ : %d\n", max_Ns);
+	printf("í•œ ë³€ìˆ˜ë‹¹ ì¶œë ¥ë  ë°ì´í„° ê°¯ìˆ˜ : %d\n", size);
+	printf("----------------------------------------------\n");
+}
+
+void Initialize_Geoconditions(void) {
+	Dbi = Dbi_ini;
+	Deo = Deo_ini;
+	Doi = Doi_ini;
+	Ns = Ns_ini;
+	Pitch = Pitch_ini;
+}
+
+	//<\Thermal and Geometric given data>
+void create_property_csv(ProData* prodata, int add) {
+	printf("\n	>Creating [Water_Property.csv] File\n");	//ê°•ì œ í˜•ë³€í™˜.
+	int index;
+	
+	FILE *fp;
+	fp = fopen("Water_Property.csv","w+");
+	
+	fprintf(fp, "Temp[C],Thermal Conductivity[W/m*K],Viscosity[kg/m*s],Density[kg/m^3],Cp[J/kg*K],Enthalpy[J/kg]\n");
+	for(index =0;index<GRID*partition+add+1;index++) {
+		fprintf(fp, "%lf,%E,%E,%E,%E,%E\n", prodata[index].temperature, prodata[index].conductivity, prodata[index].viscosity, prodata[index].density, prodata[index].Cp, prodata[index].enthalpy);		
+		//printf("		>>processing : [%3.1f %c]\n", (float)(index*100)/(GRID*partition+add+1), '%');
+	}
+	printf("	>Complete the making Water_Property.csv file!!\n");
+	fclose(fp);
+}
+
+void property_calculator(ProData* prodata, int add, double temp, double gap) {	//  
+	int index, i;
+	
+	printf("	>ê³„ì‚°ì‹œì‘ info_range : %lf ~%lf,	gap : %lf\n", Cold_in_temp, Hot_in_temp, gap);
+	for(index=0; index<add+GRID*partition+1;index++) {
+		prodata[index].temperature = temp;
+		prodata[index].conductivity = 0;
+		prodata[index].viscosity = 0;
+		prodata[index].density=0;
+		prodata[index].Cp=0;
+		prodata[index].enthalpy=0;
+		temp += gap;
+		
+		for(i=0;i<10;i++) {
+			prodata[index].conductivity += T_cond[i]*pow(temp, i);
+			prodata[index].viscosity += Viscosity[i]*pow(temp, i);
+			prodata[index].density += Density[i]*pow(temp, i);
+			prodata[index].Cp += 1000*Cp[i]*pow(temp, i);
+			prodata[index].enthalpy += 1000*Enthalpy[i]*pow(temp, i); //ë‘˜ë‹¤ KJ ë‹¨ìœ„ê°€ ê¸°ë³¸ì¸ë°, Pr ê°’ ë“± 1000ì„ ë”°ë¡œ ê³±í•˜ê¸°ëŠ” ë²ˆê±°ë¡œìš°ë‹ˆ ì—¬ê¸°ì„œ ê·¸ëƒ¥ 1000ì„ ê³±í•œë‹¤.
+		}
+		//printf("		>>property ê³„ì‚° temp : %2.3lf C[%3.1f%c] ì§„í–‰ë¨\n", temp, (float)index*100/(add+GRID*partition+1), '%');
+	}
+	printf("	>property ê³„ì‚° ì™„ë£Œ.\n");
+}
+
+void Calculate_HX_partly(ProData* prodata, Tube* ptube, Annular* pannular, Common* pcommon) {	//ì•„ì§ ì ê²€ì´ ì•ˆ ëœ í•¨ìˆ˜ ì¤‘ í•˜ë‚˜.
+	int i=0, hot_ini_idx, cold_ini_idx;
+	//ì´ˆê¸°í™” ê³¼ì •.
+	while(prodata[i].temperature < Cold_in_temp) {
+		i++;
+	}
+	cold_ini_idx = i;
+	
+	while(prodata[i].temperature < Hot_out_temp) {
+		i++;
+	}
+	hot_ini_idx = i;
+	//printf("cold_ini_idx : %d,	hot_ini_idx : %d \n", cold_ini_idx, hot_ini_idx); // idx í™•ì¸. csv íŒŒì¼ì—ì„œ ê°’ì„ ì°¾ì„ ë•ŒëŠ” ì´ ë‘ ê°’ì—ì„œ 2ì”© ë”í•˜ë©´ ì´ˆê¸° table index ê°’ì´ ë‚˜ì˜¨ë‹¤.
+	
+	ptube[0].index = hot_ini_idx;
+	pannular[0].index = cold_ini_idx;
+	ptube[0].in_temp = prodata[ptube[0].index].temperature;	// Hot ì´ˆê¸°ê°’ ê¸°ì…
+	pannular[0].in_temp = prodata[pannular[0].index].temperature;	// Cold ì´ˆê¸°ê°’ ê¸°ì…
+	ptube[0].in_enthalpy = prodata[ptube[0].index].enthalpy;	// Hot ì‚¬ì´ë“œ ì´ˆê¸° ì—”íƒˆí”¼
+	pannular[0].in_enthalpy = prodata[pannular[0].index].enthalpy;// Cold ì´ˆê¸° ì—”íƒˆí”¼
+
+	for(i=0;i<partition;i++) {	// ì´ ì•„ë˜ë¶€í„°ëŠ” ê³„ì† ë°˜ë³µê³¼ì •. ì¢€ ë” ë©”ëª¨ë¦¬ ì ê²Œ ì“¸ ìˆ˜ ìˆìœ¼ë‚˜ ë„ˆë¬´ ë³µì¡í•´ì„œ êµ¬ë³„í•˜ê¸° ì‰½ê²Œ êµ¬ì¡°ì²´ì— ë°ì´í„° ì¡°ê¸ˆ ë” ì“´ë‹¤.
+		// STEP 1: hot side Tin Tout êµ¬í•˜ê¸°		
+		ptube[i+1].index = ptube[i].index + GRID; // Hot (i+1) í…Œì´ë¸” ì¸ë±ìŠ¤ ê°’ ì…ë ¥. ì–˜ëŠ” ê°„ê²©ì´ ì¼ì •í•˜ë‹¤. ì–˜ë“¤ì€ ë‚˜ì¤‘ì— ê·¸ ë”°ë¡œ ë§ˆì§€ë§‰ì—ì„œ ë©”ëª¨ë¦¬ í• ë‹¹ ì•ˆ ë˜ì„œ ì˜¤ë¥˜ ì¼ìœ¼í‚¬ ê±´ë° ê·¸ ë¶€ë¶„ì€ ë‹¤ì‹œ ë”°ë¡œ ì† ë´ì•¼ í•œë‹¤.
+		ptube[i].out_temp = ptube[i].in_temp+DTh;// Hot(i) out ì˜¨ë„ ê¸°ì….
+		ptube[i+1].in_temp = ptube[i].out_temp; // ië²ˆì§¸ outì´ i+1ë²ˆì§¸ inê³¼ ë™ì¼í•¨.
+		
+		//STEP2 : ì—´êµí™˜ëŸ‰ ê³„ì‚°í•˜ê¸°
+		ptube[i].out_enthalpy = prodata[ptube[i+1].index].enthalpy; // hot(i) out ì—”íƒˆí”¼ê°’
+		ptube[i+1].in_enthalpy = ptube[i].out_enthalpy;	// hot(i+1) in ì—”íƒˆí”¼ê°’ 
+		pcommon[i].HX = mh*(ptube[i].out_enthalpy-ptube[i].in_enthalpy);	// part iì—ì„œì˜ ì—´êµí™˜ëŸ‰ êµ¬í•¨.
+		
+		//STEP3 : Cold_out íƒìƒ‰í›„ i+1ê¹Œì§€ ê¸°ì….
+		pannular[i+1].index = pannular[i].index+1; // pannular i+1 ì¸ë±ìŠ¤ ì´ˆê¸°í™”
+		while(pcommon[i].HX > mc*((prodata[pannular[i+1].index].enthalpy)-(prodata[pannular[i].index].enthalpy))) {
+			pannular[i+1].index++;
+		}// ìë™ìœ¼ë¡œ cold(i+1) í…Œì´ë¸” ì¸ë±ìŠ¤ ê¸°ì….
+		pannular[i].out_enthalpy = prodata[pannular[i+1].index].enthalpy;
+		pannular[i+1].in_enthalpy = pannular[i].out_enthalpy;
+		pannular[i].out_temp = prodata[pannular[i+1].index].temperature;
+		pannular[i+1].in_temp = pannular[i].out_temp;
+		
+		//STEP4: ë‚˜ë¨¸ì§€ ì˜¨ë„ ê´€ë ¨ í”„ë¡œí¼í‹° ì „ë¶€ êµ¬í•˜ê¸°
+		ptube[i].avg_temp=(prodata[ptube[i].index].temperature + prodata[ptube[i+1].index].temperature)/2;
+		ptube[i].conductivity=(prodata[ptube[i].index].conductivity + prodata[ptube[i+1].index].conductivity)/2;
+		ptube[i].viscosity=(prodata[ptube[i].index].viscosity + prodata[ptube[i+1].index].viscosity)/2;
+		ptube[i].density=(prodata[ptube[i].index].density + prodata[ptube[i+1].index].density)/2;
+		ptube[i].Cp=(prodata[ptube[i].index].Cp + prodata[ptube[i+1].index].Cp)/2;
+		
+		pannular[i].avg_temp=(prodata[pannular[i].index].temperature + prodata[pannular[i+1].index].temperature)/2;
+		pannular[i].conductivity=(prodata[pannular[i].index].conductivity + prodata[pannular[i+1].index].conductivity)/2;
+		pannular[i].viscosity=(prodata[pannular[i].index].viscosity + prodata[pannular[i+1].index].viscosity)/2;
+		pannular[i].density=(prodata[pannular[i].index].density + prodata[pannular[i+1].index].density)/2;
+		pannular[i].Cp=(prodata[pannular[i].index].Cp + prodata[pannular[i+1].index].Cp)/2;		
+		//ìœ„ ì½”ë“œë“¤ ì ê²€ìš© ì¶œë ¥ ì½”ë“œ.
+		/*printf("hot[table idx : %d] : %lf C, %lf W/mK, %lf Pa*s, %lf kg/m^3, %lf kJ/kg*K\n", ptube[i].index, ptube[i].avg_temp, ptube[i].conductivity, ptube[i].viscosity, ptube[i].density, ptube[i].Cp);
+		printf("cold[table idx : %d] : %lf C, %lf W/mK, %lf Pa*s, %lf kg/m^3, %lf kJ/kg*K\n", pannular[i].index, pannular[i].avg_temp, pannular[i].conductivity, pannular[i].viscosity, pannular[i].density, pannular[i].Cp);
+		printf("HX[%d ë²ˆì§¸] : %lf \n", i, pcommon[i].HX);*/
+		
+		//ìœ„ ê¹Œì§€ëŠ” ë°˜ë“œì‹œ! êµ¬ì¡°ì²´ì˜ ì˜¨ë„ ê´€ë ¨ í”„ë¡œí¼í‹°ë“¤ì„ ì „ë¶€ ì±„ì›Œì•¼ í•œë‹¤. in_temp, index, in_enthalpyëŠ” i+1ê´€ë ¨ ê¸°ì…ì„ í–ˆëŠ”ì§€ í™•ì¸í•  ê²ƒ.
+		// step4 ê¹Œì§€ëŠ” ì´ìƒ ë¬´. csv ì¶œë ¥ íŒŒì¼ì´ë‚˜ ë§Œë“¤ì.
+		//STEP 5 : tube side ì£¼ìš” ê°’ë“¤ êµ¬í•˜ê¸° hi ê°’ê³¼ DPì€ ê°€ì¥ ë§ˆì§€ë§‰ì— êµ¬í•œë‹¤.
+		ptube[i].Pr = cal_tube_Pr(ptube[i].Cp, ptube[i].viscosity, ptube[i].conductivity);
+		ptube[i].e_ratio = cal_tube_e_ratio();
+		ptube[i].p_ratio = cal_tube_p_ratio();
+		ptube[i].angle_ratio = cal_tube_angle_ratio();
+		ptube[i].velocity = cal_tube_velocity(ptube[i].density);
+		ptube[i].Re = cal_tube_Re(ptube[i].velocity, ptube[i].density, ptube[i].viscosity);
+		ptube[i].Nu = cal_tube_Nu(ptube[i].Re, ptube[i].e_ratio, ptube[i].p_ratio, ptube[i].angle_ratio, ptube[i].Pr);
+		ptube[i].hi = cal_tube_hi(ptube[i].Nu, ptube[i].conductivity);
+		ptube[i].fi = cal_tube_fi(ptube[i].Re, ptube[i].e_ratio, ptube[i].p_ratio, ptube[i].angle_ratio);
+		
+		//STEP 6: annular sideì˜ ì£¼ìš” ê°’ë“¤ êµ¬í•˜ê¸° ho ê°’ê³¼ DPëŠ” ë‚˜ì¤‘ì— êµ¬í•œë‹¤.
+		pannular[i].Pr = cal_annular_Pr(pannular[i].Cp, pannular[i].viscosity, pannular[i].conductivity);
+		pannular[i].e_ratio = cal_annular_e_ratio();
+		pannular[i].p_ratio = cal_annular_p_ratio();
+		pannular[i].angle_ratio = cal_annular_angle_ratio();
+		pannular[i].r_ratio = cal_annular_r_ratio();
+		pannular[i].Dhyd = cal_annular_Dhyd();
+		pannular[i].Aeff = cal_annular_Aeff();
+		pannular[i].velocity = cal_annular_velocity(pannular[i].density, pannular[i].Aeff);
+		pannular[i].Re = cal_annular_Re(pannular[i].velocity, pannular[i].density, pannular[i].Dhyd, pannular[i].viscosity);
+		pannular[i].ef = cal_annular_ef(pannular[i].Re, pannular[i].e_ratio, pannular[i].p_ratio, pannular[i].angle_ratio, pannular[i].r_ratio);
+		pannular[i].fo = cal_annular_fo(pannular[i].Re, pannular[i].r_ratio, pannular[i].ef);
+		pannular[i].Nu = cal_annular_Nu(pannular[i].fo, pannular[i].Re, pannular[i].Pr, pannular[i].e_ratio, pannular[i].p_ratio, pannular[i].r_ratio);
+		pannular[i].ho = cal_annular_ho(pannular[i].Nu, pannular[i].conductivity, pannular[i].Dhyd);
+		
+		//STEP 7: UA, HX, Length ë“± common sideì˜ ê°’ë“¤ì„ ì „ë¶€ êµ¬í•œë‹¤. 
+		//pcommon[i].DTln = ((ptube[i].in_temp-pannular[i].in_temp)-(ptube[i].out_temp-ptube[i].out_temp))/ln((ptube[i].in_temp-pannular[i].in_temp)/(ptube[i].out_temp-ptube[i].out_temp));  ì˜ë¯¸ ì—†ëŠ” ê°œë…¸ê°€ë‹¤..
+		pcommon[i].DTln = cal_common_DTln(ptube[i].in_temp, ptube[i].out_temp, pannular[i].in_temp, pannular[i].out_temp);
+		pcommon[i].Cucond = cal_common_Cucond(ptube[i].avg_temp, pannular[i].avg_temp);
+		pcommon[i].UA = cal_common_UA(pcommon[i].DTln, pcommon[i].HX);
+		pcommon[i].length = cal_common_length(ptube[i].hi, pannular[i].ho, pcommon[i].Cucond, pcommon[i].UA);
+		pcommon[i].height = cal_common_height(pcommon[i].length);
+		pcommon[i].volume = cal_common_volume(pcommon[i].height);
+		pcommon[i].Ai = cal_common_Ai(pcommon[i].length);
+		pcommon[i].Ui = cal_common_Ui(pcommon[i].UA, pcommon[i].Ai);
+		pcommon[i].Ao = cal_common_Ao(pcommon[i].length);
+		pcommon[i].Uo = cal_common_Uo(pcommon[i].UA, pcommon[i].Ao);
+		
+		//STEP 8 : DPi DPo ê°’ êµ¬í•˜ê¸°
+		ptube[i].DP = cal_tube_DP(ptube[i].fi, pcommon[i].length, ptube[i].density, ptube[i].velocity);
+		pannular[i].DP = cal_annular_DP(pannular[i].fo, pcommon[i].length, pannular[i].Dhyd, pannular[i].density, pannular[i].velocity);
+		}
+}
+
+void create_counterflow_csv(char* filename, Tube* ptube, Annular* pannular, Common* pcommon) {	// Filenameë„ ë°›ì•„ì„œ ì ì ˆíˆ ì´ë¦„ë„ ë°”ê¿€ ìˆ˜ ìˆê²Œ ë§Œë“¤ì.
+	int index;
+	char name[80] = "Conditions_";
+	char name1[80] = "CounterFlow_LMTD_Tubeside_";
+	char name2[80] = "CounterFlow_LMTD_Annularside_";
+	char name3[80] = "CounterFlow_LMTD_Results_";
+	FILE* fp;
+	
+	if(!strcmp("initial.csv", filename)) {
+		strcat(name, filename);
+		printf("\n	>Creating[%s] File\n", name);
+		fp = fopen(name, "w+");
+		
+		fprintf(fp, "Geometric Conditions\n");
+		fprintf(fp, "Dbi[m],Deo[m],tw[m],Ns,Pitch[m],Dcan[m],R,FB,Dvi[m],Dvo[m],Doi[m],angle,e\n");
+		fprintf(fp, "%E,%E,%E,%d,%E,%E,%E,%E,%E,%E,%E,%E,%E\n", Dbi, Deo, tw, Ns, Pitch, Dcan, R, FB, Dvi, Dvo, Doi, angle, e);
+		
+		fprintf(fp, "Thermal and Fluid Conditions\n");
+		fprintf(fp, "Tube Side,,,Annular Side,,,\n");
+		fprintf(fp, "Hot_in_temp[C],Hot_out_temp[C],mh[kg/s],Cold_in_temp[C],Cold_out_temp[C], mc[kg/s]\n");
+		fprintf(fp, "%lf, %lf, %lf, %lf, %lf, %lf\n",Hot_in_temp,Hot_out_temp,mh,Cold_in_temp,Cold_out_temp, mc);
+		
+		fclose(fp);
+		
+		//Step2 : Tubeside ë°ì´í„° csv ë§Œë“¤ê¸°
+		double x_position = pcommon[partition].length;
+		printf("\n	>Creating [CounterFlow_LMTD_Tubeside_initial] File\n");
+		strcat(name1, filename);
+		fp = fopen(name1, "w+");
+		fprintf(fp, "index[#],in_temp[C],out_temp[C],avg_temp[C],in_enthalpy[J],out_enthalpy[J],conductivity[W/mK],visocosity[],density[kg/m^3],Cp[J/kg*K],Pr,e_ratio,p_ratio,angle_ratio,velocity,Re,Nu,hi,fi,DP,,Length[m], x_position[m]\n");
+		fprintf(fp, "average & Sum values\n");
+		fprintf(fp, "%d,%lf,%lf,%lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", partition,ptube[partition].in_temp,ptube[partition].out_temp,ptube[partition].avg_temp,ptube[partition].in_enthalpy,ptube[partition].out_enthalpy,ptube[partition].conductivity,ptube[partition].viscosity,ptube[partition].density,ptube[partition].Cp,ptube[partition].Pr,ptube[partition].e_ratio,ptube[partition].p_ratio,ptube[partition].angle_ratio,ptube[partition].velocity,ptube[partition].Re,ptube[partition].Nu,ptube[partition].hi,ptube[partition].fi,ptube[partition].DP,pcommon[partition].length);
+		fprintf(fp, "Details!\n");
+		for(index=0;index<partition;index++) {
+			fprintf(fp, "%d,%lf,%lf,%lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E,%1.5E\n", index,ptube[index].in_temp,ptube[index].out_temp,ptube[index].avg_temp,ptube[index].in_enthalpy,ptube[index].out_enthalpy,ptube[index].conductivity,ptube[index].viscosity,ptube[index].density,ptube[index].Cp,ptube[index].Pr,ptube[index].e_ratio,ptube[index].p_ratio,ptube[index].angle_ratio,ptube[index].velocity,ptube[index].Re,ptube[index].Nu,ptube[index].hi,ptube[index].fi,ptube[index].DP,pcommon[index].length,x_position);
+			x_position -= pcommon[index].length;
+		}
+
+		printf("\n	Complete : Creating[CounterFlow_LMTD_Tubeside_initial]File\n");
+		fclose(fp);
+		
+		//Step3 : Annular side ë°ì´í„° csv ë§Œë“¤ê¸°
+		x_position = pcommon[partition].length;
+		printf("\n	>Creating[CounterFlow_LMTD_Annularside_initial] File\n");
+		strcat(name2, filename);
+		fp = fopen(name2, "w+");
+		
+		fprintf(fp, "index[#],in_temp[C],out_temp[C],avg_temp[C],in_enthalpy[J],out_enthalpy[J],conductivity[W/mK],visocosity[],density[kg/m^3],Cp[J/kg*K],Pr,e_ratio,p_ratio,angle_ratio,r_ratio,Dhyd,Aeff,velocity,Re,Nu,ef,ho,fo,DP,,Length[m],x_position[m]\n"); //15,17,18,21
+		fprintf(fp, "average & Sum Values\n");
+		fprintf(fp, "%d,%lf,%lf,%lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", partition,pannular[partition].in_temp,pannular[partition].out_temp,pannular[partition].avg_temp,pannular[partition].in_enthalpy,pannular[partition].out_enthalpy,pannular[partition].conductivity,pannular[partition].viscosity,pannular[partition].density,pannular[partition].Cp,pannular[partition].Pr,pannular[partition].e_ratio,pannular[partition].p_ratio,pannular[partition].angle_ratio,pannular[partition].r_ratio,pannular[partition].Dhyd,pannular[partition].Aeff,pannular[partition].velocity,pannular[partition].Re,pannular[partition].Nu,pannular[partition].ef,pannular[partition].ho,pannular[partition].fo,pannular[partition].DP,pcommon[partition].length);
+		fprintf(fp, "Details!\n");
+		for(index=0;index<partition;index++) {
+			fprintf(fp, "%d,%lf,%lf,%lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E,%1.5E\n", index,pannular[index].in_temp,pannular[index].out_temp,pannular[index].avg_temp,pannular[index].in_enthalpy,pannular[index].out_enthalpy,pannular[index].conductivity,pannular[index].viscosity,pannular[index].density,pannular[index].Cp,pannular[index].Pr,pannular[index].e_ratio,pannular[index].p_ratio,pannular[index].angle_ratio,pannular[index].r_ratio,pannular[index].Dhyd,pannular[index].Aeff,pannular[index].velocity,pannular[index].Re,pannular[index].Nu,pannular[index].ef,pannular[index].ho,pannular[index].fo,pannular[index].DP,pcommon[index].length,x_position);
+			x_position -= pcommon[index].length;
+		}
+		printf("\n	Complete : Creating[CounterFlow_LMTD_Annularside_initial]File\n");
+		fclose(fp);
+		
+		//Step4 : Common side ë°ì´í„° csv ë§Œë“¤ê¸°
+		printf("\n	Creating[CounterFlow_LMTD_Results_initial] File\n");
+		strcat(name3, filename);
+		fp = fopen(name3, "w+");
+		fprintf(fp, "index[#],HX[W],length[m],height[m],volume[m^3],DTln[K],UA[W/K],Ui[W/K*m^2],Ai[m^2],Uo[W/K*m^2],Ao[m^2],Cucond[W/mK],,length[m]\n");
+		fprintf(fp, "average & Sum Values\n");
+		fprintf(fp, "%d,%1.5E,%1.5E,%1.5E,%1.5E,%2.4lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E\n", partition,pcommon[partition].HX,pcommon[partition].length,pcommon[partition].height,pcommon[partition].volume,pcommon[partition].DTln,pcommon[partition].UA,pcommon[partition].Ui,pcommon[partition].Ai,pcommon[partition].Uo,pcommon[partition].Ao,pcommon[partition].Cucond);
+		fprintf(fp, "Details!!\n");
+		for(index = 0;index<partition;index++){
+			fprintf(fp, "%d,%1.5E,%1.5E,%1.5E,%1.5E,%2.4lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E\n", index,pcommon[index].HX,pcommon[index].length,pcommon[index].height,pcommon[index].volume,pcommon[index].DTln,pcommon[index].UA,pcommon[index].Ui,pcommon[index].Ai,pcommon[index].Uo,pcommon[index].Ao,pcommon[index].Cucond);
+		}
+		printf("\n	Complete : Creating[CounterFlow_LMTD_Results_initial]File\n");
+		fclose(fp);
+		// ì¶”ê°€ë¡œ ìµœì¢… í‰ê·  ë°ì´í„°ë¥¼ ë‹´ê³  ìˆëŠ” csvíŒŒì¼ì„ ì €ì¥í•´ì•¼ í•œë‹¤.
+	}
+	else if (!strcmp("Modify_Ns.csv", filename)) {	//NsëŠ” ë”°ë¡œ í•´ì¤˜ì•¼ í•œë‹¤. ë²”ìœ„ê°€ ë‹¬ë¼ì„œ.
+		strcat(name, filename);
+		printf("\n	>Creating[%s] File\n", name);
+		fp = fopen(name, "w+");
+		
+		/*fprintf(fp, "Geometric Conditions\n");
+		fprintf(fp, "Dbi[m],Deo[m],tw[m],Ns,Pitch[m],Dcan[m],R,FB,Dvi[m],Dvo[m],Doi[m],angle,e\n");
+		fprintf(fp, "%E,%E,%E,%d,%E,%E,%E,%E,%E,%E,%E,%E,%E\n", Dbi, Deo, tw, Ns, Pitch, Dcan, R, FB, Dvi, Dvo, Doi, angle, e);
+		*/	 // ì‹œê°„ ë¶€ì¡±ìœ¼ë¡œ geometric conditionì´ íŒ©í„°ë³„ë¡œ ë³€í•˜ëŠ” ê±¸ êµ¬í˜„ ëª»í•¨.
+		fprintf(fp, "Thermal and Fluid Conditions\n");
+		fprintf(fp, "Tube Side,,,Annular Side,,,\n");
+		fprintf(fp, "Hot_in_temp[C],Hot_out_temp[C],mh[kg/s],Cold_in_temp[C],Cold_out_temp[C], mc[kg/s]\n");
+		fprintf(fp, "%lf, %lf, %lf, %lf, %lf, %lf\n",Hot_in_temp,Hot_out_temp,mh,Cold_in_temp,Cold_out_temp, mc);
+		
+		fclose(fp);
+		/////////
+		strcat(name1, filename);
+		printf("\n	>Creating [%s] File\n", name1);
+		fp= fopen(name1, "w+");
+		
+		fprintf(fp, "index[#],conductivity[W/mK],viscosity[kg/m*s],density[kg/m^3],Cp[J/kg*K],Pr,e_ratio,p_ratio,angle_ratio,velocity,Re,Nu,hi,fi,DP,,length[m]\n");
+		for(index = 0;index<max_Ns-min_Ns+1;index++) {
+			fprintf(fp, "%d,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", min_Ns+index,ptube[index].conductivity,ptube[index].viscosity,ptube[index].density,ptube[index].Cp,ptube[index].Pr,ptube[index].e_ratio,ptube[index].p_ratio,ptube[index].angle_ratio,ptube[index].velocity,ptube[index].Re,ptube[index].Nu,ptube[index].hi,ptube[index].fi,ptube[index].DP,pcommon[index].length);
+		}
+		printf("\n	>Complete : Creating[%s] File\n", name1);
+		fclose(fp);
+		//////////////////
+		strcat(name2,filename);
+		printf("\n	>Creating [%s] File\n", name2);
+		fp = fopen(name2, "w+");
+	
+		fprintf(fp, "index[#],conductivity[W/mK],viscosity[kg/m*s],density[kg/m^3],Cp[J/kg*K],Pr,e_ratio,p_ratio,angle_ratio,r_ratio,Dhyd,Aeff,velocity,Re,Nu,ef,ho,fo,DP,,length[m]\n");
+		
+		for(index = 0;index<max_Ns-min_Ns+1;index++) {
+			fprintf(fp, "%d,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", min_Ns+index,pannular[index].conductivity,pannular[index].viscosity,pannular[index].density,pannular[index].Cp,pannular[index].Pr,pannular[index].e_ratio,pannular[index].p_ratio,pannular[index].angle_ratio,pannular[index].r_ratio,pannular[index].Dhyd,pannular[index].Aeff,pannular[index].velocity,pannular[index].Re,pannular[index].Nu,pannular[index].ef,pannular[index].ho,pannular[index].fo,pannular[index].DP,pcommon[index].length);
+		}
+		printf("\n	Complete : Creating[%s] File\n", name2);
+		fclose(fp);
+		/////////////////////
+		strcat(name3, filename);
+		printf("\n	>Creating [%s] File\n", name3);
+		fp=fopen(name3, "w+");
+
+		fprintf(fp, "index[#],HX[W],length[m],height[m],volume[m^3],DTln[K],UA[W/K],Ui[W/K*m^2],Ai[m^2],Uo[W/K*m^2],Ao[m^2],Cucond[W/mK],,length[m]\n");
+		
+		for(index = 0; index<max_Ns-min_Ns+1;index++) {
+			fprintf(fp, "%d,%1.5E,%1.5E,%1.5E,%1.5E,%2.4lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", min_Ns+index,pcommon[index].HX,pcommon[index].length,pcommon[index].height,pcommon[index].volume,pcommon[index].DTln,pcommon[index].UA,pcommon[index].Ui,pcommon[index].Ai,pcommon[index].Uo,pcommon[index].Ao,pcommon[index].Cucond,pcommon[index].length);
+		}
+		printf("\n	Complete : Creating [%s] File\n", name3);
+		fclose(fp);
+	}
+	
+	else {	// parametric analysis ì¼ ê²½ìš° ê·¸ëƒ¥ í•œ ë¬¸ì„œì— factorì— ê´€í•œ ìµœì¢…ê°’ë“¤ë§Œ ëª¨ì•„ë†“ëŠ”ë‹¤.
+		strcat(name, filename);
+		printf("\n	>Creating[%s] File\n", name);
+		fp = fopen(name, "w+");
+		
+		/*fprintf(fp, "Geometric Conditions\n");
+		fprintf(fp, "Dbi[m],Deo[m],tw[m],Ns,Pitch[m],Dcan[m],R,FB,Dvi[m],Dvo[m],Doi[m],angle,e\n");
+		fprintf(fp, "%E,%E,%E,%d,%E,%E,%E,%E,%E,%E,%E,%E,%E\n", Dbi, Deo, tw, Ns, Pitch, Dcan, R, FB, Dvi, Dvo, Doi, angle, e);*/
+		
+		fprintf(fp, "Thermal and Fluid Conditions\n");
+		fprintf(fp, "Tube Side,,,Annular Side,,,\n");
+		fprintf(fp, "Hot_in_temp[C],Hot_out_temp[C],mh[kg/s],Cold_in_temp[C],Cold_out_temp[C], mc[kg/s]\n");
+		fprintf(fp, "%lf, %lf, %lf, %lf, %lf, %lf\n",Hot_in_temp,Hot_out_temp,mh,Cold_in_temp,Cold_out_temp, mc);
+		
+		fclose(fp);
+		////////
+		strcat(name1, filename);
+		printf("\n	>Creating [%s] File\n", name1);
+		fp= fopen(name1, "w+");
+		fprintf(fp, "index[#],conductivity[W/mK],viscosity[kg/m*s],density[kg/m^3],Cp[J/kg*K],Pr,e_ratio,p_ratio,angle_ratio,velocity,Re,Nu,hi,fi,DP,, length[m]\n");
+		for(index = 0;index<size+1;index++) {
+			fprintf(fp, "%lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", min_factor+0.01*index,ptube[index].conductivity,ptube[index].viscosity,ptube[index].density,ptube[index].Cp,ptube[index].Pr,ptube[index].e_ratio,ptube[index].p_ratio,ptube[index].angle_ratio,ptube[index].velocity,ptube[index].Re,ptube[index].Nu,ptube[index].hi,ptube[index].fi,ptube[index].DP,pcommon[index].length);
+		}
+		printf("\n	>Complete : Creating[%s] File\n", name1);
+		fclose(fp);
+		//////////////////
+		strcat(name2,filename);
+		printf("\n	>Creating [%s] File\n", name2);
+		fp = fopen(name2, "w+");
+		
+		fprintf(fp, "index[#],conductivity[W/mK],viscosity[kg/m*s],density[kg/m^3],Cp[J/kg*K],Pr,e_ratio,p_ratio,angle_ratio,r_ratio,Dhyd,Aeff,velocity,Re,Nu,ef,ho,fo,DP,,length[m]\n");
+		
+		for(index = 0;index<size+1;index++) {
+			fprintf(fp, "%lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", min_factor+0.01*index,pannular[index].conductivity,pannular[index].viscosity,pannular[index].density,pannular[index].Cp,pannular[index].Pr,pannular[index].e_ratio,pannular[index].p_ratio,pannular[index].angle_ratio,pannular[index].r_ratio,pannular[index].Dhyd,pannular[index].Aeff,pannular[index].velocity,pannular[index].Re,pannular[index].Nu,pannular[index].ef,pannular[index].ho,pannular[index].fo,pannular[index].DP,pcommon[index].length);
+		}
+		printf("\n	Complete : Creating[%s] File\n", name2);
+		fclose(fp);
+		/////////////////////
+		strcat(name3, filename);
+		printf("\n	>Creating [%s] File\n", name3);
+		fp=fopen(name3, "w+");
+
+		fprintf(fp, "index[#],HX[W],length[m],height[m],volume[m^3],DTln[K],UA[W/K],Ui[W/K*m^2],Ai[m^2],Uo[W/K*m^2],Ao[m^2],Cucond[W/mK],,length[m]\n");
+		
+		for(index = 0; index<size+1;index++) {
+			fprintf(fp, "%lf,%1.5E,%1.5E,%1.5E,%1.5E,%2.4lf,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,%1.5E,,%1.5E\n", min_factor+0.01*index,pcommon[index].HX,pcommon[index].length,pcommon[index].height,pcommon[index].volume,pcommon[index].DTln,pcommon[index].UA,pcommon[index].Ui,pcommon[index].Ai,pcommon[index].Uo,pcommon[index].Ao,pcommon[index].Cucond,pcommon[index].length);
+		}
+		printf("\n	Complete : Creating [%s] File\n", name3);
+		fclose(fp);
+	}
+} 
+
+	//<Simple calculated data : common>
+void calculate_FB(void){
+	FB = (1-R)*M_PI*Dbi/Ns;
+}	// ì „ì—­ë³€ìˆ˜ëŠ” ë”°ë¡œ ì…ë ¥ê°’ìœ¼ë¡œ ì“°ì§€ ì•Šì•„ë„ ëœë‹¤.
+void calculate_Dvi(void){
+	Dvi = sqrt(pow(Dbi,2.0)+(Ns*(Deo-Dbi-2*tw)*FB)/M_PI);
+}
+void calculate_Dvo(void){
+	Dvo = Dvi+2*tw;
+}
+void calculate_Doi(void){
+	Doi = Deo+1.5E-04;
+}
+void calcuate_angle(void){
+	angle = atan((M_PI*Dvo)/(Ns*Pitch))*180/M_PI;
+}
+void calculate_e(void){
+	e=(Deo-(Dbi+2*tw))/2;
+}
+void calculate_DTh(void) {
+	//double sub = Hot_in_temp-Hot_out_temp;
+	DTh = (Hot_in_temp - Hot_out_temp)/partition; 	// 1.#INF00í•´ê²°. partition í˜• doubleë¡œ í•´ë†“ê³  %dë¡œ ê°’ë°›ì•„ì„œ ë‚˜ì˜¨ í˜„ìƒ.
+}
+void initialize_copper(void) {
+	copper[0].temperature = -73;
+	copper[0].conductivity = 413;
+	copper[1].temperature = 0;
+	copper[1].conductivity = 401;
+	copper[2].temperature = 127;
+	copper[2].conductivity = 392;
+	copper[3].temperature = 327;
+	copper[3].conductivity = 383;
+	copper[4].temperature = 527;
+	copper[4].conductivity = 371;
+	copper[5].temperature = 727;
+	copper[5].conductivity = 357;
+	copper[6].temperature = 927;
+	copper[6].conductivity = 342;
+}
+	//<\Simple calculated data : common>
+	//<Simple calculated data : tube>	ë°˜í™˜ê°’ ì „ë¶€ë‹¤ doubleë¡œ
+double cal_tube_Pr(double Cp, double viscosity, double conductivity){
+	return Cp*viscosity/conductivity;
+}
+double cal_tube_e_ratio(void){
+	return e/Dvi;
+} 
+double cal_tube_p_ratio(void){
+	return Pitch/Dvi;
+}
+double cal_tube_angle_ratio(void){
+	return angle/90;
+}
+double cal_tube_velocity(double density){
+	return 4*mh/(M_PI*density*pow(Dvi,2.0));
+}
+double cal_tube_Re(double velocity, double density, double viscosity){
+	return velocity*density*Dvi/viscosity;
+}
+double cal_tube_Nu(double Re, double e_ratio, double p_ratio, double angle_ratio, double Pr){
+	return 0.064*pow(Re, 0.773)*pow(e_ratio, -0.242)*pow(p_ratio, -0.108)*pow(angle_ratio, -0.599)*pow(Pr, 0.4);
+}
+double cal_tube_fi(double Re, double e_ratio, double p_ratio, double angle_ratio){
+	return 1.209*pow(Re, -0.261)*pow(e_ratio,1.26-0.05*p_ratio)*pow(p_ratio, -1.660+2.033*e_ratio)*pow(angle_ratio, -2.699+3.67*e_ratio);
+}
+double cal_tube_hi(double Nu, double conductivity){
+	return Nu*conductivity/Dvi;
+}
+double cal_tube_DP(double fi, double length, double density, double velocity){
+	return fi*length/(2*Dvi)*density*pow(velocity, 2.0);
+}
+	//<\Simple calculated data : tube>
+	//<Simple calculated data : annular>
+double cal_annular_Pr(double Cp, double viscosity, double conductivity) {
+	return Cp*viscosity/conductivity;
+}
+double cal_annular_e_ratio(void) {
+	return e/Dvo;
+} // only ì „ì—­ë³€ìˆ˜
+double cal_annular_p_ratio(void){
+	return Pitch/Dvo;
+} // only ì „ì—­ë³€ìˆ˜
+double cal_annular_angle_ratio(void){
+	return angle/90;
+}
+double cal_annular_r_ratio(void){
+	return Dvo/Doi;
+} // only ì „ì—­ë³€ìˆ˜
+double cal_annular_Dhyd(void){
+	return Doi-Dvo;
+} // only ì „ì—­ë³€ìˆ˜
+double cal_annular_Aeff(void){
+	return M_PI/4*(pow(Doi, 2.0)-pow(Dvo, 2.0));
+} // only ì „ì—­ë³€ìˆ˜
+double cal_annular_velocity(double density, double Aeff){
+	return mc/(density*Aeff);
+}
+double cal_annular_Re(double velocity, double density, double Dhyd, double viscosity){
+	return velocity*density*Dhyd/viscosity;
+}
+double cal_annular_ef(double Re, double e_ratio, double p_ratio, double angle_ratio, double r_ratio){
+	return (1+222*pow(Re,0.09)*pow(e_ratio,2.4)*pow(p_ratio,-0.49)*pow(angle_ratio,-0.38)*pow(r_ratio,2.22));
+}
+double cal_annular_fo(double Re, double r_ratio, double ef) {
+	return 4*pow(1.7372*log(Re/(1.964*log(Re)-3.8215)),-2)*(1+0.0925*r_ratio)*ef;
+}
+double cal_annular_Nu(double fo, double Re, double Pr, double e_ratio, double p_ratio, double r_ratio) {	// v 0.9 ë²„ì „ì—ì„œ ë°œìƒí•œ ì˜¤ë¥˜ ì£¼ ì›ì¸.
+	//A/B*Cêµ¬ì¡°
+	double fo_modi = fo/8;
+	double A_part = fo_modi*Re*Pr;
+	double B_part = (1+9.77*pow(fo_modi, 0.5)*(pow(Pr, 0.66666666666666666)-1));	//  pow ì•ˆì˜ ë³€ìˆ˜ë“¤ì˜ ê³„ì‚°ì€ ìë™ìœ¼ë¡œ ì²˜ë¦¬ë˜ì§€ ì•ŠëŠ”ë‹¤.
+	double C_part = pow(Re,-0.20)*pow(e_ratio,-0.32)*pow(p_ratio,-0.28)*pow(r_ratio,-1.64);
+	/*printf("í˜„ì¬ fo ê°’ : %E, Re ê°’ : %E, Pr ê°’ : %E, e* = %E, p* = %E, r* = %E ê°’ì…ë‹ˆë‹¤.\n", fo, Re, Pr, e_ratio, p_ratio, r_ratio);
+	printf("\nA_part : %lf\nB_part : %lf\nC_part : %lf\nNu : %lfì…ë‹ˆë‹¤.\n", A_part, B_part, C_part,A_part/B_part*C_part);
+	system("pause");*/
+	return A_part/B_part*C_part;
+	//return (((fo/8)*Re*Pr)/(1+(9.77*sqrt(fo/8)*(pow(Pr,2/3)-1))))*pow(Re,-0.2)*pow(e_ratio,-0.32)*pow(p_ratio,-0.28)*pow(r_ratio,-1.64);
+}
+double cal_annular_ho(double Nu, double conductivity, double Dhyd){
+	return Nu*conductivity/Dhyd;
+}
+double cal_annular_DP(double fo, double length, double Dhyd, double density, double velocity){
+	return fo*length/(2*Dhyd)*density*pow(velocity, 2.0);
+}
+	//<\Simple calculated data : annular>
+	//<Simple calculated data : objects>
+double cal_common_DTln(double hot_in, double hot_out, double cold_in, double cold_out){
+	return (((hot_in-cold_in)-(hot_out-cold_out))/log((hot_in-cold_in)/(hot_out-cold_out)));
+}
+double cal_common_Cucond(double hot_avg, double cold_avg){
+	double avg_temp = (hot_avg+cold_avg)/2;
+	double ratio;
+	int i=0;
+	while(avg_temp > copper[i].temperature) {	// 927ë„ë³´ë‹¤ ë†’ìœ¼ë©´ ì˜¤ì‘ë™.
+		i++;
+	}	// ë†’ì€ ì¸ë±ìŠ¤ ìë™ ë°˜í™˜.
+	if(i==0) {
+		return copper[0].temperature;
+	}
+	else {
+		ratio = (avg_temp - copper[i-1].temperature)/(copper[i].temperature - copper[i-1].temperature);
+		return copper[i-1].conductivity+ratio*(copper[i].conductivity - copper[i-1].conductivity);
+	}
+};
+double cal_common_UA(double DTln, double HX){
+	return HX/DTln;
+}
+double cal_common_length(double hi, double ho, double Cucond, double UA){
+	return UA*((1/(hi*M_PI*Dvi))+((log(Dvo/Dvi))/(2*M_PI*Cucond))+(1/(ho*M_PI*Dvo)));
+}
+double cal_common_height(double length){
+	return length/(M_PI*Dcan)*(Doi+2*tw);
+}
+double cal_common_volume(double height){ // ê³µì‹ ë¯¸í™•ì¸ í•¨ìˆ˜
+	return (Dcan+Doi+2*tw)*(Dcan+Doi+2*tw)*height*M_PI/4;
+}
+double cal_common_Ai(double length){
+	return M_PI*Dvi*length;
+}
+double cal_common_Ui(double UA, double Ai){
+	return UA/Ai;
+}
+double cal_common_Ao(double length){
+	return M_PI*Dvo*length;
+}
+double cal_common_Uo(double UA, double Ao){
+	return UA/Ao;
+}
+	//<\Simple calculated data : objects>
+		//<Evaluate Sum of Avg Values>
+void SumNAvg_Common(Common* pcommon)  {	// partitionì€ ì „ì—­ë³€ìˆ˜ì„. 
+	int i;
+	// ì´ˆê¸°í™” ê³¼ì •
+	pcommon[partition].HX = 0;	// Sum
+	pcommon[partition].length = 0;	// Sum //ê°€ì¥ ì¤‘ìš”í•œ ë³€ìˆ˜.
+	pcommon[partition].height = 0; // Sum
+	pcommon[partition].volume = 0; // Sum
+	pcommon[partition].DTln = 0;	// avg
+	pcommon[partition].UA = 0; // Sum
+	pcommon[partition].Ui = 0; // avg
+	pcommon[partition].Ai = 0; // Sum
+	pcommon[partition].Uo = 0;// avg
+	pcommon[partition].Ao = 0; // Sum
+	pcommon[partition].Cucond = 0; // avg
+	
+	for(i=0;i<partition;i++) {
+	pcommon[partition].HX += pcommon[i].HX;	
+	pcommon[partition].length += pcommon[i].length;	 
+	pcommon[partition].height += pcommon[i].height; 
+	pcommon[partition].volume += pcommon[i].volume; 
+	pcommon[partition].DTln += pcommon[i].DTln * pcommon[i].length;	
+	pcommon[partition].UA += pcommon[i].UA; 
+	pcommon[partition].Ui += pcommon[i].Ui * pcommon[i].length; 
+	pcommon[partition].Ai += pcommon[i].Ai; 
+	pcommon[partition].Uo += pcommon[i].Uo * pcommon[i].length;
+	pcommon[partition].Ao += pcommon[i].Ao; 
+	pcommon[partition].Cucond += pcommon[i].Cucond * pcommon[i].length; 		
+	}
+	pcommon[partition].DTln /= pcommon[partition].length;
+	pcommon[partition].Ui /= pcommon[partition].length;
+	pcommon[partition].Uo /= pcommon[partition].length;
+	pcommon[partition].Cucond /= pcommon[partition].length;
+}
+
+void SumNAvg_Tube(Tube* ptube, Common* pcommon) {
+	int i;
+	ptube[partition].in_temp = 0;	// ë¬´ì˜ë¯¸í•œ ê°’ë“¤.
+	ptube[partition].out_temp = 0;
+	ptube[partition].avg_temp = 0;
+	ptube[partition].index = 0;
+	ptube[partition].in_enthalpy = 0;
+	ptube[partition].out_enthalpy = 0;
+	
+	ptube[partition].conductivity= 0;	//conductivity ë¶€í„° ì‹œì‘.
+	ptube[partition].viscosity = 0;
+	ptube[partition].density = 0;
+	ptube[partition].Cp = 0;
+	ptube[partition].Pr = 0;
+	ptube[partition].e_ratio = 0;
+	ptube[partition].p_ratio = 0;
+	ptube[partition].angle_ratio = 0;
+	ptube[partition].velocity = 0;
+	ptube[partition].Re = 0;
+	ptube[partition].Nu = 0;
+	ptube[partition].hi = 0;
+	ptube[partition].fi = 0;
+	ptube[partition].DP = 0;
+	
+	for(i=0; i<partition; i++) {
+	ptube[partition].conductivity+= pcommon[i].length*ptube[i].conductivity;	
+	ptube[partition].viscosity += pcommon[i].length*ptube[i].viscosity;
+	ptube[partition].density += pcommon[i].length*ptube[i].density;
+	ptube[partition].Cp += pcommon[i].length*ptube[i].Cp;
+	ptube[partition].Pr += pcommon[i].length*ptube[i].Pr;
+	ptube[partition].e_ratio += pcommon[i].length*ptube[i].e_ratio;
+	ptube[partition].p_ratio += pcommon[i].length*ptube[i].p_ratio;
+	ptube[partition].angle_ratio += pcommon[i].length*ptube[i].angle_ratio;
+	ptube[partition].velocity += pcommon[i].length*ptube[i].velocity;
+	ptube[partition].Re += pcommon[i].length*ptube[i].Re;
+	ptube[partition].Nu += pcommon[i].length*ptube[i].Nu;
+	ptube[partition].hi += pcommon[i].length*ptube[i].hi;
+	ptube[partition].fi += pcommon[i].length*ptube[i].fi;
+	ptube[partition].DP += ptube[i].DP;
+	}
+	
+	ptube[partition].conductivity/= pcommon[partition].length;	
+	ptube[partition].viscosity /= pcommon[partition].length;
+	ptube[partition].density /= pcommon[partition].length;
+	ptube[partition].Cp /= pcommon[partition].length;
+	ptube[partition].Pr /= pcommon[partition].length;
+	ptube[partition].e_ratio /= pcommon[partition].length;
+	ptube[partition].p_ratio /= pcommon[partition].length;
+	ptube[partition].angle_ratio /= pcommon[partition].length;
+	ptube[partition].velocity /= pcommon[partition].length;
+	ptube[partition].Re /= pcommon[partition].length;
+	ptube[partition].Nu /= pcommon[partition].length;
+	ptube[partition].hi /= pcommon[partition].length;
+	ptube[partition].fi /= pcommon[partition].length;
+}
+
+void SumNAvg_Annular(Annular* pannular, Common* pcommon) {
+	int i;
+	pannular[partition].in_temp = 0;	// ë¬´ì˜ë¯¸í•œ ê°’ë“¤.
+	pannular[partition].out_temp = 0;
+	pannular[partition].avg_temp = 0;
+	pannular[partition].index = 0;
+	pannular[partition].in_enthalpy = 0;
+	pannular[partition].out_enthalpy = 0;
+	
+	pannular[partition].conductivity= 0;	//conductivity ë¶€í„° ì‹œì‘.
+	pannular[partition].viscosity = 0;
+	pannular[partition].density = 0;
+	pannular[partition].Cp = 0;
+	pannular[partition].Pr = 0;
+	pannular[partition].e_ratio = 0;
+	pannular[partition].p_ratio = 0;
+	pannular[partition].r_ratio = 0;//
+	pannular[partition].Dhyd = 0;//
+	pannular[partition].Aeff = 0;//
+	pannular[partition].angle_ratio = 0;
+	pannular[partition].velocity = 0;
+	pannular[partition].Re = 0;
+	pannular[partition].Nu = 0;
+	pannular[partition].ho = 0;
+	pannular[partition].ef = 0;//
+	pannular[partition].fo = 0;
+	pannular[partition].DP = 0;
+	
+	for(i=0; i<partition; i++) {
+	pannular[partition].conductivity+= pcommon[i].length*pannular[i].conductivity;	
+	pannular[partition].viscosity += pcommon[i].length*pannular[i].viscosity;
+	pannular[partition].density += pcommon[i].length*pannular[i].density;
+	pannular[partition].Cp += pcommon[i].length*pannular[i].Cp;
+	pannular[partition].Pr += pcommon[i].length*pannular[i].Pr;
+	pannular[partition].e_ratio += pcommon[i].length*pannular[i].e_ratio;
+	pannular[partition].p_ratio += pcommon[i].length*pannular[i].p_ratio;
+	pannular[partition].r_ratio += pcommon[i].length*pannular[i].r_ratio;//
+	pannular[partition].Dhyd += pcommon[i].length*pannular[i].Dhyd;//
+	pannular[partition].Aeff += pcommon[i].length*pannular[i].Aeff;//
+	pannular[partition].angle_ratio += pcommon[i].length*pannular[i].angle_ratio;
+	pannular[partition].velocity += pcommon[i].length*pannular[i].velocity;
+	pannular[partition].Re += pcommon[i].length*pannular[i].Re;
+	pannular[partition].Nu += pcommon[i].length*pannular[i].Nu;
+	pannular[partition].ho += pcommon[i].length*pannular[i].ho;
+	pannular[partition].ef += pcommon[i].length*pannular[i].ef;//
+	pannular[partition].fo += pcommon[i].length*pannular[i].fo;
+	pannular[partition].DP += pannular[i].DP;
+	}
+	
+	pannular[partition].conductivity/= pcommon[partition].length;	
+	pannular[partition].viscosity /= pcommon[partition].length;
+	pannular[partition].density /= pcommon[partition].length;
+	pannular[partition].Cp /= pcommon[partition].length;
+	pannular[partition].Pr /= pcommon[partition].length;
+	pannular[partition].e_ratio /= pcommon[partition].length;
+	pannular[partition].p_ratio /= pcommon[partition].length;
+	pannular[partition].angle_ratio /= pcommon[partition].length;
+	pannular[partition].r_ratio /= pcommon[partition].length;//
+	pannular[partition].Dhyd /= pcommon[partition].length;//
+	pannular[partition].Aeff /= pcommon[partition].length;//
+	pannular[partition].velocity /= pcommon[partition].length;
+	pannular[partition].Re /= pcommon[partition].length;
+	pannular[partition].Nu /= pcommon[partition].length;
+	pannular[partition].ho /= pcommon[partition].length;
+	pannular[partition].ef /= pcommon[partition].length;//
+	pannular[partition].fo /= pcommon[partition].length;
+}
+	//<\Evaluate Sum of Avg Values>
+//<\Fucntion contents>
+
